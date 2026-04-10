@@ -1,0 +1,15 @@
+# RL frameworks
+stable-baselines3
+ray[rllib]
+
+# Pokemon Showdown interface
+poke-env
+
+# Core ML
+torch
+numpy
+
+# Utilities
+gymnasium
+tensorboard
+pydantic

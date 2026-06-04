@@ -60,6 +60,59 @@ Uses public belief states (what's common knowledge) and counterfactual
 regret minimization at search nodes. Avoids strategy fusion by reasoning
 over information sets rather than specific states.
 
+## Simulation Engine Options
+
+### Pokemon Showdown Sim (@pkmn/sim) — PREFERRED for rollouts
+- TypeScript package, extracted from Showdown's source
+- `Battle.toJSON()` / `Battle.fromJSON()` confirmed working for
+  state save/restore (confirmed by Zarel, Showdown creator)
+- Perfectly correct: IS the official battle engine
+- Supports doubles, VGC, all gens
+- npm: https://www.npmjs.com/package/@pkmn/sim
+- GitHub issue on cloning: smogon/pokemon-showdown#8105
+
+### poke-engine (pmariglia) — NOT suitable
+- Rust engine with Python bindings, built for searching Pokemon states
+- Has MCTS, expectiminimax, state serialization, apply/undo
+- **Singles only, gens 4-8. No doubles/VGC. Not fully correct.**
+- Useful as architectural reference, not as our engine
+- https://github.com/pmariglia/poke-engine
+
+### poke-env — For real games only
+- Python ↔ Showdown WebSocket. Good for playing on ladder / self-play.
+- Cannot save/restore battle states (issue #190, never implemented)
+- Use for: PPO training (Phase 1), playing real games
+- NOT usable for MCTS rollouts
+- https://github.com/hsahovic/poke-env
+
+### Planned Architecture
+- **Real games**: poke-env → Showdown server (Python)
+- **MCTS rollouts**: @pkmn/sim in Node.js, called from Python
+- **RL training**: PyTorch (Python)
+- MCTS search loop should run in JS to avoid Python↔JS bridge
+  per state clone. Cross to Python only for neural net leaf evaluation.
+
+## Data Sources for Priors
+
+### Smogon Usage Stats (automated, recurring)
+- https://www.smogon.com/stats/ — monthly dumps
+- Move usage, item usage, ability usage, teammate correlations
+- Stratified by rating — can filter to high-elo only
+- Gives marginal probabilities (e.g. "72% of Incineroar carry Fake Out")
+  but not full 4-move set distributions
+
+### Showdown Replay Ladder (semi-automated)
+- Users upload replays; can filter by elo
+- Pro: regular stream of current data, follows meta trends
+- Con: can't see full sets (only moves/items revealed in battle),
+  bias toward same uploaders
+
+### Tournament Team Sheets (manual, POC first)
+- Community tournaments collect full team lists from all entrants
+- Pro: complete sets (moves, items, EVs, abilities, tera types)
+- Con: inconsistent cadence, spread across organizers
+- **Starting here for POC** — one tournament's worth of full team data
+
 ## VGC-Specific Observations
 
 - Action space per turn: ~100 joint actions (2 Pokemon × ~10 actions

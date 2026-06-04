@@ -3,6 +3,26 @@ name = "pokemon-vgc-agent"
 version = "0.1.0"
 description = "Reinforcement learning agent for competitive Pokemon VGC double battles"
 requires-python = ">=3.10"
+dependencies = [
+    "stable-baselines3",
+    "ray[rllib]",
+    "poke-env",
+    "torch",
+    "numpy",
+    "gymnasium",
+    "tensorboard",
+    "pydantic",
+    "scikit-learn",
+    "streamlit",
+    "pandas",
+    "requests",
+    "plotly",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pylint",
+]
 
 [tool.pylint.main]
 ignore = ["tests"]

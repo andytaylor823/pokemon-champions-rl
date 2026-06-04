@@ -1,0 +1,120 @@
+# Legal Items — Pokemon Champions Regulation M-A
+# Source: MetaVGC (April 2026)
+# One item per line, alphabetically sorted.
+Abomasite
+Absolite
+Aerodactylite
+Aggronite
+Alakazite
+Altarianite
+Ampharosite
+Aspear Berry
+Audinite
+Babiri Berry
+Banettite
+Beedrillite
+Black Belt
+Black Glasses
+Blastoisinite
+BrightPowder
+Cameruptite
+Chandelurite
+Charcoal
+Charizardite X
+Charizardite Y
+Charti Berry
+Cheri Berry
+Chesnaughtite
+Chesto Berry
+Chilan Berry
+Chimechite
+Choice Scarf
+Chople Berry
+Clefablite
+Coba Berry
+Colbur Berry
+Crabominite
+Delphoxite
+Dragon Fang
+Dragoninite
+Drampanite
+Emboarite
+Excadrite
+Fairy Feather
+Feraligite
+Floettite
+Focus Band
+Focus Sash
+Froslassite
+Galladite
+Garchompite
+Gardevoirite
+Gengarite
+Glalitite
+Glimmoranite
+Golurkite
+Greninjite
+Gyaradosite
+Haban Berry
+Hard Stone
+Hawluchanite
+Heracronite
+Houndoominite
+Kangaskhanite
+Kasib Berry
+Kebia Berry
+King's Rock
+Leftovers
+Leppa Berry
+Light Ball
+Lopunnite
+Lucarionite
+Lum Berry
+Magnet
+Manectite
+Medichamite
+Meganiumite
+Mental Herb
+Meowsticite
+Metal Coat
+Miracle Seed
+Mystic Water
+Never-Melt Ice
+Occa Berry
+Oran Berry
+Passho Berry
+Payapa Berry
+Pecha Berry
+Persim Berry
+Pidgeotite
+Pinsirite
+Poison Barb
+Quick Claw
+Rawst Berry
+Rindo Berry
+Roseli Berry
+Sablenite
+Scizorite
+Scope Lens
+Scovillainite
+Sharp Beak
+Sharpedonite
+Shell Bell
+Shuca Berry
+Silk Scarf
+SilverPowder
+Sitrus Berry
+Skarmorite
+Slowbronite
+Soft Sand
+Spell Tag
+Starminite
+Steelixite
+Tanga Berry
+TwistedSpoon
+Tyranitarite
+Venusaurite
+Victreebelite
+Wacan Berry
+White Herb
+Yache Berry

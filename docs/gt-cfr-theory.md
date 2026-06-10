@@ -16,6 +16,8 @@ This is the distilled, organized version of an extended theory discussion. It is
 - `.cursor/rules/pokemon-champions-format.mdc` — Regulation M-A rules, stat system, Mega mechanics, doubles mechanics.
 - `.cursor/rules/legality-validation.mdc` — how to validate teams (CLI helper) without burning tokens.
 - `research/notes.md` — algorithm survey (PPO / AlphaZero / R-NaD), simulation-engine choices (`@pkmn/sim`, poke-env), data sources for priors. **The engineering counterpart to this doc.**
+- `docs/state-encoding.md` — how the battle state is tokenized and consumed by the neural network. Covers entity tokens, field tokens, the Transformer architecture, belief-weighted candidate tokens, Phase 1 vs Phase 4 value-head designs, and alternatives considered. **The encoding/NN architecture counterpart to this doc.**
+- `docs/search-nn-interface.md` — when the NN is called during search, caching, deal sampling, the composite-private-state problem, the three-tier computation split (backbone/policy/value), and chance-node bucketing. **The runtime interface counterpart to this doc.**
 - `docs/article_summary*.md` — the long-form conversational Q&A derivations that this document distills. Go there for the verbose back-and-forth and additional examples.
 
 **Notation conventions:** display math in `$$ … $$`, inline math in `$ … $`. Player $i$; opponent $-i$. Strategies $\sigma$; the search/CFR iteration counter is $t$ (do **not** confuse it with the in-game turn number).
@@ -442,6 +444,8 @@ It periodically publishes a checkpoint; self-play workers reload it. **System le
 
 Derived repeatedly across the discussion; reuse it as the default roadmap. (Cross-reference the milestones in `.cursor/rules/project-overview.mdc`.)
 
+> **Priority (rebalanced toward shipping).** The objective is an agent that *works in real games*, reached through visible, celebratable increments — not theoretical completeness. Treat Phases 1–3 (the MCTS / determinization line) as a deliberately **brief pit-stop**, held only long enough to clear two exit criteria: (1) **infrastructure is proven** — we can simulate Champions games and theoretical turns, encode state, mask actions, and run the self-play loop end to end; and (2) **feasibility is shown** — a from-random agent becomes a semi-coherent battler that **reliably beats earlier versions of itself** (even while "cheating" with perfect information). The moment both hold, stop polishing the baseline and commit to **GT-CFR / Player of Games (Phase 4) as the north star and the real product.** The phases below are still the right *order*; this note rebalances how long to *dwell* in each.
+
 1. **Perfect-info AlphaZero.** Reveal both teams' full sets. MCTS + two-head net + self-play. Validates the hard engineering: `@pkmn/sim` integration & state cloning, state encoding, NN, training loop, action masking. *Hardest engineering phase.*
 2. **Add stochastic resolution.** Introduce chance nodes (damage/accuracy/crit/secondary/multi-hit). Still perfect-info, now stochastic.
 3. **Imperfect-info baseline (determinized IS-MCTS).** Hide opponent items/back-row/unrevealed moves; sample worlds from meta priors. Accept that **strategy fusion** is happening; measure exploitability so you know the ceiling.
@@ -453,6 +457,14 @@ Derived repeatedly across the discussion; reuse it as the default roadmap. (Cros
 ---
 
 ## 15. Glossary and quick-reference equations
+
+**The three nested levels of game state (do not conflate).** A common slip is to treat `info set` as "the public information." It is *not* — an info set already includes the acting player's own private state. There are **three** levels, with strict containment $\text{public state } \beta \;\supset\; \text{info set } I \;\supset\; \text{history } h$:
+
+- **History $h$** — the full ground truth: the complete path including *both* players' private states and all chance outcomes. Perfect information; a single node in the full game tree. Most granular.
+- **Information set $I$** — *one* player's view: the **public state plus that player's own private state** (everything *that* player knows). Bundles every history that differs only in the *other* player's hidden info (and chance). The acting player cannot tell those histories apart, so must play one strategy across the whole $I$.
+- **Public state / public belief state $\beta$** — common knowledge only: what *both* players have observed. Bundles all histories regardless of *either* player's private state; decomposes into many info sets per player (one per possible private state of that player). This is the network input ($\beta$ in §12).
+
+**Where each appears in GT-CFR (the usual confusion):** the CVPN value head returns one counterfactual value **per info set** ($v_i(I)$, §10.1) — *not* per history. In poker terms it emits a value for each of your 1326 *hands* (your info sets), not one per joint hand-vs-hand deal. Histories are the *summands inside* a single info-set value, weighted by the counterfactual reach (the belief): $v_i(I,a)=\sum_{h\in I}\pi_{-i}^\sigma(h)\,u_i^\sigma(h\cdot a)$ (§7.1). So a regret update at a public state consumes per-**info-set** CFVs (one per enumerated private state); per-**history** continuation values are what those CFVs are built from.
 
 **Symbols.** $i$ player / $-i$ opponent; $h$ history (= node); $I$ info set; $A(I)$ legal actions; $\sigma$ strategy, $\sigma^t$ iterate $t$, $\bar\sigma$ average strategy; $\pi^\sigma(h)$ reach prob, $\pi_{-i}^\sigma(h)$ counterfactual reach; $u_i$ utility/payoff; $v_i(I,a)$ counterfactual value; $r_i^t / R_i^T$ instantaneous / cumulative regret; $P(I,a)$ policy-head prior; $N$ visit count; $\beta$ public belief state.
 

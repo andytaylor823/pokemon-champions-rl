@@ -71,28 +71,30 @@ Each entry: **Responsibility · Interface · Implementations (Phase 1 → Phase 
 
 **Responsibility.** Provide game mechanics — legal actions, state transitions (including chance resolution), terminal detection and payoff, and *cloning/forking* — without the rest of the system knowing Showdown, TypeScript, or the process boundary exists. This is the single home of the Python↔TS boundary.
 
-**Interface (Python-side, handle-based — the load-bearing design choice).** Heavy `Battle` objects stay inside the Node worker; Python holds opaque handles and exchanges only compact messages.
+**Interface (Python-side, handle-based — the load-bearing design choice).** Heavy `Battle` objects stay inside a per-worker Node subprocess; Python holds opaque handles and exchanges only compact, **engine-native** messages (structured snapshots + Showdown choice strings — no tensors, no protocol-log text). *Settled by interview; see the SimClient plan for the full rationale.*
 ```
-new_battle(team_a, team_b, format_id, seed) -> Handle
-clone(h: Handle) -> Handle                      # fork for search (toJSON/fromJSON inside Node)
-legal_actions(h, player) -> ActionMask          # canonical action indices (see §3.6)
-step(h, joint_action) -> StepResult             # apply both players' choices; resolve chance
-   StepResult = { child: Handle,
-                  chance: ChanceInfo,            # which outcome fired + its probability/bucket
-                  observation: PublicObservation,# what the encoder needs; NO full battle state
-                  terminal: bool, utility: float|None,
-                  revealed: RevealedInfo }       # info that just became public (drives belief updates)
-release(h) -> None                               # free a fork; bound the Node-side handle pool
+new_battle(team_a, team_b, seed) -> (handle, StateView)   # teams as structured sets; Node packs+validates
+open_search(from_handle=None) -> session                  # snapshot the live battle into a search-owned root
+step(h, choices: dict[Side,str], seed) -> StepResult      # clone parent, reseed to `seed`, resolve
+view(h) -> StateView
+release(h); close_search(session); close()
+   StateView   = { phase: teamPreview|move|forceSwitch|terminal,
+                   to_move: [sides that must act],
+                   legal:  { side -> raw Showdown request (move slots, targets, switches, canMega) },
+                   snapshot: <omniscient structured state: sides→pokemon, field, side conditions>,
+                   terminal: bool, utility: {p1: ±1}|None }
+   StepResult  = { child: handle, view: StateView,
+                   outcome: <what randomness fired this step, so Search can bucket> }
 ```
-Invariants callers rely on: handles are immutable snapshots (stepping returns a *new* handle); `observation` contains only legally-knowable information for the given perspective; chance is resolved *inside* `step` (the search decides whether to sample one outcome or enumerate buckets via a flag — see §3.5).
+Invariants callers rely on: **handles are immutable snapshots** — `step` clones internally and returns a *new* child handle, leaving the parent steppable with other choices/seeds. **The seed is mandatory** — cloning copies the PRNG state, so stepping a clone without reseeding repeats the same outcome; the search supplies a fresh seed per chance sample (§3.5). The state tells you *which side(s)* must act (simultaneous moves, unilateral forced switches, team preview all handled uniformly). Every clone in a search belongs to its `session` and is freed in one shot by `close_search` (it cannot leak); `release` exists for capping peak memory mid-search. v1 snapshots are **omniscient** — correct for self-play / perfect-info Phase 1; redaction/belief is a later encoder-layer concern.
 
-**Implementations.** *Today:* `sim/src/battle-runner.ts` runs a *full* game with two `Strategy` callbacks — it is the seed, not the seam. The first real build target is to extend it into a **persistent Node worker** exposing the calls above (JSON over stdio, or a local socket/HTTP service), backed by `Battle.toJSON()`/`fromJSON()` for `clone`. Team packing and the 66/32 stat-point validation already live there (`packTeam`, `validateStatPoints`).
+**Implementations.** Built on the **synchronous** engine API (`new Battle` + `setPlayer` + `makeChoices`) plus `State.serializeBattle`/`deserializeBattle` for cloning (the PRNG seed is part of the serialized state) — *not* the async `BattleStream`. The installed engine is the full `pokemon-showdown` package (the docs' `@pkmn/sim` reference is stale; same engine). Transport is a **persistent Node subprocess per worker, JSON-lines over stdio**. `sim/src/battle-runner.ts` (full-game `Strategy` runner) is retained only for replay export; its `packTeam`/`validateStatPoints` (66/32 stat points) are reused by the worker. Build order: clone/reseed/latency spike → `sim/src/sim-worker.ts` (stdio worker) → Python `SimClient` → snapshot completeness.
 
-**Seam.** The `SimClient` protocol. Realistically a **hypothetical seam** (one adapter: the `@pkmn/sim` worker; alternatives like poke-engine are rejected for lacking doubles/VGC correctness). It earns its place anyway via *locality*: every serialization, IPC, handle-lifecycle, and protocol-parsing concern is trapped here. Deletion test: delete it and the boundary smears into Search, Encoder, and Self-play.
+**Seam.** The `SimClient` protocol. Realistically a **hypothetical seam** (one adapter: the `pokemon-showdown` worker; alternatives like poke-engine are rejected for lacking doubles/VGC correctness). It earns its place anyway via *locality*: every serialization, IPC, handle-lifecycle, and snapshot-introspection concern is trapped here. Deletion test: delete it and the boundary smears into Search, Encoder, and Self-play. The transport (stdio JSON) is a nested swap point — socket/MessagePack can replace it behind the same Python interface if profiling demands.
 
 **Depth.** Deep — tiny interface, enormous hidden complexity (the entire battle engine + cross-language boundary + fork pool).
 
-> **Cost characteristics (answers the runtime-boundary question; benchmark before committing).** Dex load is a *one-time* per-process cost (~hundreds of ms–1s), amortized by keeping the worker alive. The recurring cost is per-call IPC + serialization; the handle design keeps it small by never shipping full battle state across the wire. Per-decision real-time play is comfortable; *self-play throughput* is where boundary overhead multiplies — mitigate with batching, the handle design, and one worker per parallel actor. **First thing to validate:** a spike that clones+steps a Champions doubles battle many times through a persistent worker and measures round-trip latency.
+> **Cost characteristics (measured by the Milestone-0 spike, `sim/src/clone-spike.ts`).** Dex load is a *one-time* per-process cost, amortized by keeping the worker alive. A fork (serialize → JSON round-trip → deserialize) **plus one step ≈ 1.6 ms**, **~72 KiB/clone** (~30 KiB serialized), and clone determinism + reseed variance are both verified. So a search tree of dozens of concrete states is ~tens of ms of fork compute and a few MiB — comfortable within a 60 s real-play turn. The IPC round-trip is on top (small messages only, by the handle design). *Self-play throughput* is where the per-fork cost multiplies — mitigate with one worker per parallel actor and, if needed, batching across the boundary.
 
 ### 3.2 `Encoder` — battle observation → tensors
 

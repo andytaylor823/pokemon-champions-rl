@@ -1,7 +1,7 @@
 """Scrape per-Pokemon learnsets from pokemon-zone.com for Champions format.
 
 Usage:
-    python -m meta_priors.scrape_learnsets
+    python -m src.meta_priors.scrape_learnsets
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pathlib import Path
 import requests
 
 _BASE_URL = "https://www.pokemon-zone.com/champions/pokemon"
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _LEGAL_DIR = _DATA_DIR / "legal"
 _OUTPUT_PATH = _LEGAL_DIR / "learnsets.json"
 

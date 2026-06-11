@@ -20,7 +20,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _LEGAL_DIR = _DATA_DIR / "legal"
 _CACHE_DIR = _DATA_DIR / "tournaments"
 
@@ -491,7 +491,7 @@ def main(argv: list[str] | None = None) -> None:
     args = argv if argv is not None else sys.argv[1:]
     if not args:
         print(
-            "Usage: python -m meta_priors.check_legality <tournament-url-or-id>"
+            "Usage: python -m src.meta_priors.check_legality <tournament-url-or-id>"
         )
         sys.exit(2)
 

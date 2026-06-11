@@ -29,7 +29,7 @@ from meta_priors.clustering import (
 )
 from meta_priors.data_loader import PokemonSet, load_all_tournaments
 
-_SPRITES_DIR = Path(__file__).resolve().parent.parent / "data" / "sprites"
+_SPRITES_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sprites"
 
 
 def _sprite_path(species_id: str) -> Path | None:

@@ -20,12 +20,12 @@ class StrategyPlayer extends BattlePlayer {
     this.strategy = strategy;
   }
 
-  override receiveError(error: Error) {
+  receiveError(error: Error) {
     if (error.message.startsWith("[Unavailable choice]")) return;
     throw error;
   }
 
-  override receiveRequest(request: any) {
+  receiveRequest(request: any) {
     if (request.wait) return;
 
     const choice = this.strategy(request);

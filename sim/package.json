@@ -5,7 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "postinstall": "cd node_modules/pokemon-showdown && npm run build",
-    "test-battle": "tsx src/test-battle.ts"
+    "test": "vitest run",
+    "test:watch": "vitest watch"
   },
   "dependencies": {
     "pokemon-showdown": "github:smogon/pokemon-showdown"
@@ -13,6 +14,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.8"
   }
 }

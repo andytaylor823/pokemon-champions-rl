@@ -22,7 +22,18 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pylint",
+    "pylint-pydantic",
+    "pytest",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests requiring a live Node sim-worker subprocess (run with: pytest -m integration)",
+    "slow: long-running tests (run with: pytest -m slow)",
+]
+# Default: skip integration and slow tests; run only fast unit tests
+addopts = "-m 'not integration and not slow'"
 
 [tool.pylint.main]
 ignore = ["tests"]

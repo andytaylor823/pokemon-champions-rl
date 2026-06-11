@@ -17,7 +17,7 @@ This is the distilled, organized version of an extended design discussion about 
 - `.cursor/rules/agent/overview.mdc` — milestones, action space, imperfect-info inventory.
 - `.cursor/rules/game-domain/overview.mdc` — Regulation M-A rules, stat system, legal pool sizes.
 - `.cursor/rules/game-domain/stat-points.mdc` — Champions stat-point formula (replaces EVs; 66 total, 32 max per stat).
-- `meta_priors/clustering.py` — current archetype clustering (to be replaced by a conditional sampler; see Section 9).
+- `src/meta_priors/clustering.py` — current archetype clustering (to be replaced by a conditional sampler; see Section 9).
 - `data/legal/` — legal lists: ~195 species, ~120 items, ~551 unique moves across all learnsets, median 61 moves per species.
 
 ---
@@ -336,7 +336,7 @@ Attention has no built-in notion of order: permute the input rows and the output
 
 ## 9. Meta-priors rewrite direction
 
-The current `meta_priors/clustering.py` groups observed tournament sets into fuzzy **archetypes** via distance-based clustering. This is being replaced because:
+The current `src/meta_priors/clustering.py` groups observed tournament sets into fuzzy **archetypes** via distance-based clustering. This is being replaced because:
 
 1. **Archetype boundaries are subjective and fragile.** "Is Sash vs Scarf Basculegion one archetype or two?" depends on human judgment that is hard to make consistently and keep current.
 2. **Archetypes lose within-cluster variance.** Two distinct sets collapsed into the same archetype are indistinguishable to the encoding.
@@ -398,7 +398,7 @@ A legitimate path: ship a flat-MLP encoder for Phase 1 (confirm the self-play lo
 
 ### 11.3 Opponent private-state space: archetypes vs data-driven candidates
 
-**Hand-defined archetypes** (current `meta_priors/clustering.py`): collapse real sets into fuzzy buckets. Problems: subjective boundaries, hard to maintain, loses within-cluster variance. See Section 9.
+**Hand-defined archetypes** (current `src/meta_priors/clustering.py`): collapse real sets into fuzzy buckets. Problems: subjective boundaries, hard to maintain, loses within-cluster variance. See Section 9.
 
 **Data-driven top-$K$ candidates**: literally the $K$ most common *real* sets matching the observations, drawn from tournament data. No judgment calls; auto-refreshable. **Selected** (pending the smoothing/backoff design).
 

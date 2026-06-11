@@ -34,12 +34,26 @@ const { State } = require("pokemon-showdown/dist/sim/state");
 type Side = "p1" | "p2";
 type Seed = string | [number, number, number, number];
 
+// --- format config (hoisted above registry so resetState can reference it) --
+const FORMAT_ID_DEFAULT = "gen9championsvgc2026regma";
+let FORMAT_ID = FORMAT_ID_DEFAULT;
+
 // --- handle / session registry ---------------------------------------------
 let nextHandle = 1;
 let nextSession = 1;
 const battles = new Map<number, any>(); // handle -> Battle
 const handleSession = new Map<number, number | null>(); // handle -> session (null = global/live)
 const sessions = new Map<number, Set<number>>(); // session -> handles
+
+/** Clear all state — used by tests to isolate each test case. */
+function resetState(): void {
+  nextHandle = 1;
+  nextSession = 1;
+  battles.clear();
+  handleSession.clear();
+  sessions.clear();
+  FORMAT_ID = FORMAT_ID_DEFAULT;
+}
 
 function alloc(battle: any, session: number | null): number {
   const h = nextHandle++;
@@ -174,9 +188,6 @@ function view(battle: any): any {
 }
 
 // --- command dispatch -------------------------------------------------------
-const FORMAT_ID_DEFAULT = "gen9championsvgc2026regma";
-let FORMAT_ID = FORMAT_ID_DEFAULT;
-
 function dispatch(msg: any): any {
   switch (msg.cmd) {
     case "config": {
@@ -253,4 +264,27 @@ function main(): void {
   process.stderr.write("[sim-worker] ready\n");
 }
 
-main();
+// Only start the stdio loop when executed directly, not when imported for tests.
+// This is the TypeScript equivalent of Python's `if __name__ == "__main__"`.
+if (require.main === module) {
+  main();
+}
+
+export {
+  dispatch,
+  resetState,
+  view,
+  alloc,
+  freeHandle,
+  getBattle,
+  cloneBattle,
+  newBattle,
+  applyChoices,
+  actingSides,
+  phaseOf,
+  utilityOf,
+  snapshotBattle,
+  battles,
+  handleSession,
+  sessions,
+};

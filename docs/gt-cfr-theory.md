@@ -282,7 +282,7 @@ Iteration 1 already says "bet the King," which is correct. Across many iteration
 Vanilla CFR/CFR+ traverse the entire tree per iteration — fine for Kuhn (24 regret entries), impossible for Pokémon. Three tools, used together:
 
 1. **MCCFR (Monte Carlo CFR):** sample paths/subtrees per iteration instead of full traversal (outcome / external / public-chance sampling). Unbiased; cheaper iterations, higher variance.
-2. **Abstraction / bucketing:** collapse strategically-similar private states into a manageable set. **This is where Pokémon's continuous stat-point (EV) space and combinatorial item/move space get tamed** — via the meta-prior clustering (`meta_priors/clustering.py`): each species reduces to a few **archetype sets** (top-$k$ by prior), so the opponent's per-slot private space becomes "one of $k$ archetypes," and the history sum becomes finite. The meta-priors pipeline is the project's abstraction layer, not just flavor.
+2. **Abstraction / bucketing:** collapse strategically-similar private states into a manageable set. **This is where Pokémon's continuous stat-point (EV) space and combinatorial item/move space get tamed** — via the meta-prior clustering (`src/meta_priors/clustering.py`): each species reduces to a few **archetype sets** (top-$k$ by prior), so the opponent's per-slot private space becomes "one of $k$ archetypes," and the history sum becomes finite. The meta-priors pipeline is the project's abstraction layer, not just flavor.
 3. **Function approximation:** replace explicit tables with neural networks that generalize across info sets (next two sections).
 
 ### 9.1 Deep CFR (distinct from GT-CFR — know the difference)
@@ -415,7 +415,7 @@ It periodically publishes a checkpoint; self-play workers reload it. **System le
 - **Public state** — everything both players have observed: revealed Pokémon, revealed moves, items revealed by effect, HP, status, stat stages, field conditions (weather/terrain/Tailwind/Trick Room) **with their turn counters**, Mega availability.
 - **Private state** — your hidden info: back-row identities, unrevealed moves/items, stat-point spreads.
 - **Info set** — public state + *your* private state (you act on it). The **opponent's** info set bundles every private state consistent with what they have observed of you.
-- **Belief range** — a probability distribution over the opponent's possible private states, supplied by **meta priors** and reduced to top-$k$ **archetype sets** per species (Section 9, `meta_priors/`).
+- **Belief range** — a probability distribution over the opponent's possible private states, supplied by **meta priors** and reduced to top-$k$ **archetype sets** per species (Section 9, `src/meta_priors/`).
 
 **Per-turn tree structure** (how simultaneity, chance, and forced switches appear):
 

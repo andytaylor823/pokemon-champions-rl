@@ -29,11 +29,8 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "integration: tests requiring a live Node sim-worker subprocess (run with: pytest -m integration)",
-    "slow: long-running tests (run with: pytest -m slow)",
+    "slow: long-running tests (skip with: pytest -m 'not slow')",
 ]
-# Default: skip integration and slow tests; run only fast unit tests
-addopts = "-m 'not integration and not slow'"
 
 [tool.pylint.main]
 ignore = ["tests"]

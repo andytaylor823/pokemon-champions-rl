@@ -47,10 +47,5 @@ jobs:
 
       - run: pip install -e ".[dev]"
 
-      # Fast unit tests (default: skips integration and slow markers)
-      - name: Unit tests
+      - name: All tests
         run: pytest -v
-
-      # Integration tests (spawn Node worker subprocess)
-      - name: Integration tests
-        run: pytest -m integration -v

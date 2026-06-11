@@ -1,9 +1,7 @@
 """Integration tests for SimClient — the Python side of the battle-engine seam.
 
-Extracted from SimClient._self_test(). Each test spawns a real Node sim-worker
-subprocess, so these are marked @pytest.mark.integration and skipped by default.
-
-Run with:  pytest -m integration
+Extracted from SimClient._self_test(). Each test uses the session-scoped
+sim_client fixture which spawns a real Node sim-worker subprocess.
 """
 from __future__ import annotations
 
@@ -14,14 +12,11 @@ from pathlib import Path
 import pytest
 
 # Ensure src/ is importable
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from sim_client import SimClient, SimError  # type: ignore[import-untyped]
-
-# Mark every test in this module as integration (requires a running Node worker)
-pytestmark = pytest.mark.integration
 
 # ---------------------------------------------------------------------------
 # Shared test data

@@ -1,10 +1,7 @@
 """Shared pytest fixtures.
 
 The `sim_client` fixture starts a real Node sim-worker subprocess and yields a
-connected SimClient. It is session-scoped (one worker per test run) and marked
-as `integration` so it only runs when explicitly requested:
-
-    pytest -m integration
+connected SimClient. It is session-scoped (one worker per entire test run).
 """
 from __future__ import annotations
 
@@ -22,7 +19,6 @@ if str(REPO_ROOT / "src") not in sys.path:
 @pytest.fixture(scope="session")
 def sim_client():
     """Spawn a sim-worker subprocess, yield a connected SimClient, clean up."""
-    # Import here so non-integration tests don't need the sim_client module
     from sim_client import SimClient  # type: ignore[import-untyped]
 
     # inherit_stderr=True so worker startup errors are visible in test output

@@ -8,7 +8,7 @@
 - `docs/gt-cfr-theory.md` — the algorithm (CFR, GT-CFR, the two-loop model, training targets). The ground truth; trusted deeply.
 - `docs/state-encoding.md` — token anatomy, Transformer, belief-weighted candidates, value-head designs.
 - `docs/search-nn-interface.md` — when the NN is called in search, caching, deal sampling, the three-tier split, chance bucketing.
-- `.cursor/rules/project-overview.mdc` — milestones, action space, imperfect-info inventory.
+- `.cursor/rules/agent/overview.mdc` — milestones, action space, imperfect-info inventory.
 
 > **A note on trust.** `gt-cfr-theory.md` was produced with Opus 4.8 and is trusted deeply. `state-encoding.md` and `search-nn-interface.md` were produced with Opus 4.6 — trusted *directionally*, but their specific numbers (token counts, `d_model`, K, ms estimates, sample counts) are tentative defaults to tune, not commitments. Numbers in this doc inherit that caveat and are marked accordingly.
 
@@ -167,7 +167,7 @@ Invariants: deals are drawn from the **joint** distribution (respects item claus
 
 **Depth.** Deep — hides scraping, legality correction, conditioning, and correlation structure behind three small calls.
 
-**Supporting sub-system — the data pipeline** (`meta_priors/legality.py`, `scrape_learnsets.py`, `download_sprites.py`, `data/`, `scripts/check_team_legality.py`). Responsibility: turn Limitless tournament JSON + scraped learnsets into clean, legal, queryable set data. Its own seam is the on-disk `data/` layout + the legality checker. Locality note from `tournament-data-pipeline.mdc`: Limitless does **not** validate legality, so cached tournament JSON is **manually corrected** after download — *never re-download a file that already exists* or you lose the fixes. (Flag to verify: `legality.py` references a `data/legal/moves.txt` that isn't on disk; confirm it imports cleanly.)
+**Supporting sub-system — the data pipeline** (`meta_priors/legality.py`, `scrape_learnsets.py`, `download_sprites.py`, `data/`, `scripts/check_team_legality.py`). Responsibility: turn Limitless tournament JSON + scraped learnsets into clean, legal, queryable set data. Its own seam is the on-disk `data/` layout + the legality checker. Locality note from `meta-priors/data-pipeline.mdc`: Limitless does **not** validate legality, so cached tournament JSON is **manually corrected** after download — *never re-download a file that already exists* or you lose the fixes. (Flag to verify: `legality.py` references a `data/legal/moves.txt` that isn't on disk; confirm it imports cleanly.)
 
 ### 3.5 `Search` — the inner-loop planner (the project's primary seam)
 
@@ -192,7 +192,7 @@ The caller samples one joint action from `strategy`, plays it via `SimClient`, a
 
 ### 3.6 The action space (a shared contract, not a module)
 
-A **stable canonical index `0..A`** over all joint actions, with legality expressed as a mask (choice-lock, disable, taunt, no-PP, forced-switch all flip mask bits). Three modules code against it: `Encoder` (emits `action_mask`), `CVPN` (policy head width `A`), and `SimClient` (translates an index ↔ a Showdown choice string like `"move heatwave 1, move protect"`). The index↔choice-string translation lives inside `SimClient`. Size ≈ ~100 joint actions/turn (*tentative*; `project-overview.mdc` §Action Space). Open sub-decision: a single flat joint head vs **per-Pokémon factored heads**.
+A **stable canonical index `0..A`** over all joint actions, with legality expressed as a mask (choice-lock, disable, taunt, no-PP, forced-switch all flip mask bits). Three modules code against it: `Encoder` (emits `action_mask`), `CVPN` (policy head width `A`), and `SimClient` (translates an index ↔ a Showdown choice string like `"move heatwave 1, move protect"`). The index↔choice-string translation lives inside `SimClient`. Size ≈ ~100 joint actions/turn (*tentative*; `agent/overview.mdc` §Action Space). Open sub-decision: a single flat joint head vs **per-Pokémon factored heads**.
 
 ### 3.7 `SelfPlay` — outer-loop data generation
 
@@ -244,7 +244,7 @@ Nothing below is a rewrite; each is swapping one adapter behind a stable interfa
 | `SelfPlay`/`Replay`/`Trainer` | scalar value target | vector value target | tuple value-shape only |
 | `Evaluation` | win-rate vs random / prior selves | + approximate exploitability | metric swap |
 
-Exit criteria for leaving Phase 1 (from `project-overview.mdc` §Milestones and `gt-cfr-theory.md` §14): (1) infrastructure proven end-to-end (simulate games + theoretical turns, encode, mask, run the loop) and (2) a from-random agent reliably beats earlier versions of itself. Then pivot hard to Phase 4.
+Exit criteria for leaving Phase 1 (from `agent/overview.mdc` §Milestones and `gt-cfr-theory.md` §14): (1) infrastructure proven end-to-end (simulate games + theoretical turns, encode, mask, run the loop) and (2) a from-random agent reliably beats earlier versions of itself. Then pivot hard to Phase 4.
 
 ---
 
@@ -268,7 +268,7 @@ Not architecture, but worth recording so future reviews don't trip on it:
 
 - **`pyproject.toml` carries abandoned deps.** `stable-baselines3`, `ray[rllib]`, `gymnasium`, `tensorboard` reflect an earlier PPO/RLlib plan that the rebalanced strategy dropped (the `mcts-vs-alphazero` transcript explicitly calls PPO "a detour"). PPO is **not** part of this architecture. Prune when convenient (keep `ray` only if chosen for §6.6).
 - **`sim/` is a full-game runner, not yet a search seam.** `battle-runner.ts` plays games with `Strategy` callbacks; the `clone`/`step`/handle interface of §3.1 is the first thing to build on top of it.
-- **`research/notes.md` predates the rebalance** — it frames PPO as "Phase 1 workhorse" and AlphaZero as "Phase 2." Treat `gt-cfr-theory.md` §14 + `project-overview.mdc` as the current phasing; `research/notes.md` is still the right home for sim-engine and data-source rationale.
+- **`research/notes.md` predates the rebalance** — it frames PPO as "Phase 1 workhorse" and AlphaZero as "Phase 2." Treat `gt-cfr-theory.md` §14 + `agent/overview.mdc` as the current phasing; `research/notes.md` is still the right home for sim-engine and data-source rationale.
 
 ---
 

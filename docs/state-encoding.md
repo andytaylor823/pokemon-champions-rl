@@ -14,9 +14,9 @@ This is the distilled, organized version of an extended design discussion about 
 
 - `docs/gt-cfr-theory.md` — the algorithmic theory (CFR, GT-CFR, value heads, training loop). **Read it first**; this document assumes familiarity with info sets, CFVs, and the two-loop model.
 - `docs/search-nn-interface.md` — when the NN is called during search, caching, deal sampling, the composite-private-state problem (cross-slot correlations in beliefs and values), the three-tier computation split, and chance-node bucketing. **The runtime interface counterpart to this doc.**
-- `.cursor/rules/project-overview.mdc` — milestones, action space, imperfect-info inventory.
-- `.cursor/rules/pokemon-champions-format.mdc` — Regulation M-A rules, stat system, legal pool sizes.
-- `.cursor/rules/stat-points.mdc` — Champions stat-point formula (replaces EVs; 66 total, 32 max per stat).
+- `.cursor/rules/agent/overview.mdc` — milestones, action space, imperfect-info inventory.
+- `.cursor/rules/game-domain/overview.mdc` — Regulation M-A rules, stat system, legal pool sizes.
+- `.cursor/rules/game-domain/stat-points.mdc` — Champions stat-point formula (replaces EVs; 66 total, 32 max per stat).
 - `meta_priors/clustering.py` — current archetype clustering (to be replaced by a conditional sampler; see Section 9).
 - `data/legal/` — legal lists: ~195 species, ~120 items, ~551 unique moves across all learnsets, median 61 moves per species.
 
@@ -455,4 +455,4 @@ Three ways to give every Pokémon access to field information:
 
 ---
 
-*If you are a future agent picking up implementation: for the algorithmic theory underlying CFR, info sets, and the training loop, read `docs/gt-cfr-theory.md` first. This document covers only the encoding and NN architecture. For milestones and tooling, see `research/notes.md` and `.cursor/rules/project-overview.mdc`.*
+*If you are a future agent picking up implementation: for the algorithmic theory underlying CFR, info sets, and the training loop, read `docs/gt-cfr-theory.md` first. This document covers only the encoding and NN architecture. For milestones and tooling, see `research/notes.md` and `.cursor/rules/agent/overview.mdc`.*

@@ -12,9 +12,9 @@ This is the distilled, organized version of an extended theory discussion. It is
 
 **Related artifacts (do not duplicate — read these for their domains):**
 
-- `.cursor/rules/project-overview.mdc` — system architecture, milestones, action-space size, imperfect-info inventory.
-- `.cursor/rules/pokemon-champions-format.mdc` — Regulation M-A rules, stat system, Mega mechanics, doubles mechanics.
-- `.cursor/rules/legality-validation.mdc` — how to validate teams (CLI helper) without burning tokens.
+- `.cursor/rules/agent/overview.mdc` — system architecture, milestones, action-space size, imperfect-info inventory.
+- `.cursor/rules/game-domain/overview.mdc` — Regulation M-A rules, stat system, Mega mechanics, doubles mechanics.
+- `.cursor/rules/game-domain/legality.mdc` — how to validate teams (CLI helper) without burning tokens.
 - `research/notes.md` — algorithm survey (PPO / AlphaZero / R-NaD), simulation-engine choices (`@pkmn/sim`, poke-env), data sources for priors. **The engineering counterpart to this doc.**
 - `docs/state-encoding.md` — how the battle state is tokenized and consumed by the neural network. Covers entity tokens, field tokens, the Transformer architecture, belief-weighted candidate tokens, Phase 1 vs Phase 4 value-head designs, and alternatives considered. **The encoding/NN architecture counterpart to this doc.**
 - `docs/search-nn-interface.md` — when the NN is called during search, caching, deal sampling, the composite-private-state problem, the three-tier computation split (backbone/policy/value), and chance-node bucketing. **The runtime interface counterpart to this doc.**
@@ -442,7 +442,7 @@ It periodically publishes a checkpoint; self-play workers reload it. **System le
 
 ## 14. Recommended build order
 
-Derived repeatedly across the discussion; reuse it as the default roadmap. (Cross-reference the milestones in `.cursor/rules/project-overview.mdc`.)
+Derived repeatedly across the discussion; reuse it as the default roadmap. (Cross-reference the milestones in `.cursor/rules/agent/overview.mdc`.)
 
 > **Priority (rebalanced toward shipping).** The objective is an agent that *works in real games*, reached through visible, celebratable increments — not theoretical completeness. Treat Phases 1–3 (the MCTS / determinization line) as a deliberately **brief pit-stop**, held only long enough to clear two exit criteria: (1) **infrastructure is proven** — we can simulate Champions games and theoretical turns, encode state, mask actions, and run the self-play loop end to end; and (2) **feasibility is shown** — a from-random agent becomes a semi-coherent battler that **reliably beats earlier versions of itself** (even while "cheating" with perfect information). The moment both hold, stop polishing the baseline and commit to **GT-CFR / Player of Games (Phase 4) as the north star and the real product.** The phases below are still the right *order*; this note rebalances how long to *dwell* in each.
 
@@ -509,7 +509,7 @@ $$
 
 **Internal artifacts**
 - `research/notes.md` — algorithm survey, sim-engine choices, data sources (engineering counterpart).
-- `.cursor/rules/project-overview.mdc`, `.cursor/rules/pokemon-champions-format.mdc`, `.cursor/rules/legality-validation.mdc`.
+- `.cursor/rules/agent/overview.mdc`, `.cursor/rules/game-domain/overview.mdc`, `.cursor/rules/game-domain/legality.mdc`.
 - `docs/article_summary*.md` — verbose conversational derivations this document distills.
 
 ---

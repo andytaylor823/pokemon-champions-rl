@@ -24,6 +24,7 @@ dev = [
     "pylint",
     "pylint-pydantic",
     "pytest",
+    "ruff",
 ]
 
 [tool.pytest.ini_options]
@@ -37,3 +38,81 @@ ignore = ["tests"]
 
 [tool.pylint.messages_control]
 disable = ["C0114", "C0115", "C0116"]
+
+# ── Ruff ──────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py310"
+line-length = 180
+indent-width = 4
+
+exclude = [
+    "tests/*",
+    "*.ipynb",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".ruff_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    "*.egg-info",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = 50
+
+[tool.ruff.lint]
+select = [
+    # Tier 1 — core
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "RUF", # Ruff-specific rules
+    # Tier 2 — code quality
+    "N",    # pep8-naming
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "PIE",  # flake8-pie
+    "PERF", # perflint
+    "FURB", # refurb
+    "RET",  # flake8-return
+    "PT",   # flake8-pytest-style
+    "TC",   # flake8-type-checking
+    # Tier 3 — DS-specific
+    "S",   # flake8-bandit (security)
+    "A",   # flake8-builtins
+    "ICN", # flake8-import-conventions
+    "PD",  # pandas-vet
+    "NPY", # NumPy-specific rules
+    "DTZ", # flake8-datetimez
+    "FLY", # flynt (f-string enforcement)
+    # Utility
+    "LOG", # flake8-logging
+    "TID", # flake8-tidy-imports
+]
+
+ignore = [
+    "E501",  # line too long — handled by formatter
+    "PD002", # inplace=True — common in DS pipelines
+    "PD008", # .at[] — valid accessor
+    "PD009", # .iat[] — valid accessor
+    "PD010", # .pivot_table() vs .pivot()
+    "PD013", # .stack() vs .melt()
+    "PD015", # pd.merge() vs .merge()
+    "B008",  # function calls in default args
+    "B905",  # zip() without strict=
+    "A002",  # shadowing builtins — common in framework callbacks
+    "S603",  # subprocess call — scripts only invoke known local files
+    "S311",  # pseudo-random — used for shuffling, not crypto
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "scripts", "toy_examples"]

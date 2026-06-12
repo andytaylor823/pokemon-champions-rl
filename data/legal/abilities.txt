@@ -1,0 +1,142 @@
+# Legal Abilities — Pokemon Champions Regulation M-A
+# Minimal stub — will be fully populated when legality/belief modules are built.
+# One ability per line, alphabetically sorted.
+Adaptability
+Aerilate
+Aftermath
+Air Lock
+Analytic
+Arena Trap
+Aroma Veil
+Bad Dreams
+Battle Armor
+Beast Boost
+Blaze
+Bulletproof
+Chlorophyll
+Clear Body
+Cloud Nine
+Competitive
+Compound Eyes
+Contrary
+Cursed Body
+Dazzling
+Defiant
+Download
+Drizzle
+Drought
+Dry Skin
+Filter
+Flame Body
+Flash Fire
+Flower Veil
+Fluffy
+Fur Coat
+Gale Wings
+Gluttony
+Guts
+Harvest
+Huge Power
+Hustle
+Hydration
+Ice Scales
+Illusion
+Immunity
+Imposter
+Infiltrator
+Innards Out
+Inner Focus
+Insomnia
+Intimidate
+Iron Fist
+Justified
+Keen Eye
+Levitate
+Lightning Rod
+Limber
+Liquid Voice
+Magic Bounce
+Magic Guard
+Magician
+Marvel Scale
+Mold Breaker
+Moody
+Motor Drive
+Multiscale
+Natural Cure
+No Guard
+Oblivious
+Overcoat
+Overgrow
+Own Tempo
+Pickpocket
+Pixilate
+Poison Heal
+Power Spot
+Prankster
+Pressure
+Protean
+Pure Power
+Quick Draw
+Quick Feet
+Rain Dish
+Rattled
+Reckless
+Refrigerate
+Regenerator
+Ripen
+Rock Head
+Rough Skin
+Sand Rush
+Sand Stream
+Sand Veil
+Sap Sipper
+Scrappy
+Serene Grace
+Shadow Tag
+Shed Skin
+Sheer Force
+Shell Armor
+Shield Dust
+Simple
+Skill Link
+Slow Start
+Sniper
+Snow Warning
+Solar Power
+Solid Rock
+Speed Boost
+Stamina
+Stall
+Steadfast
+Steam Engine
+Steelworker
+Sticky Hold
+Storm Drain
+Strong Jaw
+Sturdy
+Suction Cups
+Super Luck
+Surge Surfer
+Swarm
+Swift Swim
+Synchronize
+Technician
+Thick Fat
+Tinted Lens
+Torrent
+Tough Claws
+Trace
+Triage
+Truant
+Unaware
+Unburden
+Vital Spirit
+Volt Absorb
+Water Absorb
+Water Bubble
+Water Veil
+Weak Armor
+Wonder Guard
+Wonder Skin
+Zen Mode

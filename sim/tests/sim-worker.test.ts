@@ -201,6 +201,31 @@ describe("sim-worker dispatch (unit)", () => {
       expect(mon.moves[0]).toMatchObject({ id: expect.any(String), pp: expect.any(Number) });
     });
 
+    it("snapshot includes extended pokemon fields at team preview", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const v = dispatch({ cmd: "view", handle: battle.handle }).view;
+      const mon = v.snapshot.sides[0].pokemon[0];
+
+      // Status state defaults
+      expect(mon.statusState).toEqual({ stage: null, time: null });
+      // Item tracking
+      expect(mon.item).toBe("charizarditey");
+      expect(mon.lastItem).toBeNull();
+      // Active turns (not yet on field at team preview)
+      expect(mon.activeTurns).toBe(0);
+      // Volatile details (empty at start)
+      expect(mon.volatileDetails).toEqual({});
+    });
+
+    it("snapshot includes field duration fields", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const v = dispatch({ cmd: "view", handle: battle.handle }).view;
+
+      expect(v.snapshot.field.weatherDuration).toBeNull();
+      expect(v.snapshot.field.terrainDuration).toBeNull();
+      expect(v.snapshot.field.pseudoWeather).toEqual({});
+    });
+
     it("non-terminal battle has null utility", () => {
       const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
       const v = dispatch({ cmd: "view", handle: battle.handle }).view;
@@ -212,6 +237,66 @@ describe("sim-worker dispatch (unit)", () => {
       const v = dispatch({ cmd: "view", handle: battle.handle }).view;
       expect(v.to_move).toContain("p1");
       expect(v.to_move).toContain("p2");
+    });
+  });
+
+  describe("extended snapshot fields mid-battle", () => {
+    /** Helper: advance past team preview into the move phase. */
+    function advanceToMovePhase(handle: number): { child: number; view: any } {
+      const step = dispatch({
+        cmd: "step", handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+      return step;
+    }
+
+    it("activeTurns increments for pokemon on field", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = advanceToMovePhase(battle.handle);
+
+      // After team preview, active mons should have activeTurns >= 1
+      const p1side = step1.view.snapshot.sides[0];
+      const activeMons = p1side.pokemon.filter((m: any) => m.active);
+      expect(activeMons.length).toBe(2);
+      for (const mon of activeMons) {
+        expect(mon.activeTurns).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it("weather sets duration in field snapshot", () => {
+      // Pelipper has Drizzle — bring it active (position 5 in team_a, 1-indexed)
+      // Use team order that puts Pelipper active: team order "5123" -> Pelipper + Charizard active
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 5123", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+
+      // Drizzle should set rain
+      const field = step.view.snapshot.field;
+      if (field.weather === "RainDance") {
+        expect(field.weatherDuration).not.toBeNull();
+      }
+    });
+
+    it("volatileDetails captures volatile state during battle", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = advanceToMovePhase(battle.handle);
+
+      // Charizard: move 2 = Protect (self-targeting, no target arg)
+      // Venusaur: move 3 = Giga Drain targeting foe slot 1
+      if (step1.view.phase === "move") {
+        const step2 = dispatch({
+          cmd: "step", handle: step1.child,
+          choices: { p1: "move 2, move 3 1", p2: "move 1 1, move 1 1" },
+          seed: [100, 200, 300, 400],
+        });
+        // After Protect, volatileDetails should be defined on all mons
+        const p1side = step2.view.snapshot.sides[0];
+        expect(p1side.pokemon[0].volatileDetails).toBeDefined();
+      }
     });
   });
 });

@@ -39,16 +39,20 @@ export interface PokemonSnapshot {
   maxhp: number;
   fainted: boolean;
   status: string | null;
+  statusState: { stage: number | null; time: number | null };
   ability: string | null;
   item: string | null;
+  lastItem: string | null;
   active: boolean;
   position: number;
+  activeTurns: number;
   teraType: string | null;
   terastallized: string | null;
   stats: Record<string, number>;
   boosts: Record<string, number>;
   moves: MoveSnapshot[];
   volatiles: string[];
+  volatileDetails: Record<string, { duration?: number; time?: number; hp?: number; counter?: number }>;
 }
 
 export interface SideSnapshot {
@@ -59,8 +63,10 @@ export interface SideSnapshot {
 
 export interface FieldSnapshot {
   weather: string | null;
+  weatherDuration: number | null;
   terrain: string | null;
-  pseudoWeather: string[];
+  terrainDuration: number | null;
+  pseudoWeather: Record<string, { duration: number | null }>;
 }
 
 export interface BattleSnapshot {

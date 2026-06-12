@@ -12,6 +12,7 @@ dependencies = [
     "ray[rllib]",
     "poke-env",
     "torch",
+    "tensordict",
     "numpy",
     "gymnasium",
     "tensorboard",
@@ -42,7 +43,7 @@ markers = [
 # them without any sys.path manipulation in the tests.
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["sim_client"]
+py-modules = ["sim_client", "action_space", "vocab", "obs_bundle", "encoder"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -129,4 +130,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["meta_priors", "sim_client", "scripts", "toy_examples"]
+known-first-party = ["meta_priors", "sim_client", "action_space", "vocab", "obs_bundle", "encoder", "scripts", "toy_examples"]

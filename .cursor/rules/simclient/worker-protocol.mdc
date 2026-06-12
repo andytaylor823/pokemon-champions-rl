@@ -2,6 +2,10 @@
 description: SimClient worker stdio JSON-RPC protocol and how to extend it without desyncing the two sides
 globs: sim/src/**/*.ts,src/sim_client.py
 alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - sim/src/sim-worker.ts
+  - src/sim_client.py
 ---
 
 # Worker stdio JSON-RPC

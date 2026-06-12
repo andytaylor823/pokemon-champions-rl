@@ -1,3 +1,13 @@
+---
+description: Naming, placement, determinism, and pattern conventions for writing tests in this repo
+globs: tests/**/*.py,sim/tests/**/*.ts
+alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - tests/
+  - sim/tests/
+---
+
 # Test Writing Conventions
 
 ## File Naming and Placement

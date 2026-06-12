@@ -1,7 +1,10 @@
 ---
 description: Architecture of the meta_priors package — build clustering, prior computation, and the Streamlit explorer
-globs: meta_priors/**/*.py
+globs: src/meta_priors/**/*.py
 alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - src/meta_priors/
 ---
 
 # Meta Priors Package

@@ -1,7 +1,12 @@
 ---
 description: How tournament data is downloaded, cached, validated, and manually corrected
-globs: meta_priors/**/*.py,data/tournaments/**,data/legal/**
+globs: src/meta_priors/**/*.py,data/tournaments/**,data/legal/**
 alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - src/meta_priors/
+  - data/tournaments/
+  - data/legal/
 ---
 
 # Tournament Data Pipeline

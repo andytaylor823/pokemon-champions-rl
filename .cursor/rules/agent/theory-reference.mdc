@@ -1,6 +1,9 @@
 ---
 description: Pointer to the algorithmic theory ground-truth (AlphaZero / CFR / GT-CFR) for this project
 alwaysApply: true
+last_synced: 3c3811f
+watches:
+  - docs/architecture/
 ---
 
 # Algorithmic Theory: Read the Ground-Truth Doc

@@ -2,6 +2,10 @@
 description: SimClient non-negotiable invariants — boundary, sync API, immutability, mandatory seeds, lifetime
 globs: sim/src/**/*.ts,src/sim_client.py
 alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - sim/src/sim-worker.ts
+  - src/sim_client.py
 ---
 
 # SimClient contract (do not break)

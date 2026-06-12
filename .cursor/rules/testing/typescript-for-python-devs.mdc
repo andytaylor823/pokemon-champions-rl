@@ -1,3 +1,12 @@
+---
+description: Minimum TypeScript/Vitest context for Python-primary maintainer to write and maintain sim tests
+globs: sim/tests/**/*.ts,sim/src/**/*.ts
+alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - sim/
+---
+
 # TypeScript Testing Quick Reference (for Python Developers)
 
 The maintainer works primarily in Python. This rule gives agents the minimum TS/Vitest context needed to write and maintain tests in `sim/tests/`.

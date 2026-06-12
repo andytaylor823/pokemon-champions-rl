@@ -1,6 +1,9 @@
 ---
 description: What distinguishes Pokemon Champions from mainline Pokemon games and other competitive formats
 alwaysApply: true
+last_synced: 3c3811f
+watches:
+  - data/legal/
 ---
 
 # Pokemon Champions — Competitive Doubles Format

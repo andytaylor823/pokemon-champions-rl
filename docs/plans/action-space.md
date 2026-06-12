@@ -1,3 +1,11 @@
+---
+last_synced: 3c3811f
+watches:
+  - src/
+  - sim/src/
+  - docs/architecture/repo-architecture.md
+---
+
 # Action Space — Implementation Plan
 
 > Module ref: `docs/architecture/repo-architecture.md` §3.6

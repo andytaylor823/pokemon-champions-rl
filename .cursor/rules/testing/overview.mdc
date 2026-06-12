@@ -1,3 +1,14 @@
+---
+description: Test runners, directory layout, layers, and how to run tests for both TypeScript (Vitest) and Python (pytest)
+globs: tests/**/*.py,sim/tests/**/*.ts
+alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - tests/
+  - sim/tests/
+  - .github/workflows/
+---
+
 # Testing Strategy Overview
 
 This repo uses a two-language test setup matching the two-language codebase.

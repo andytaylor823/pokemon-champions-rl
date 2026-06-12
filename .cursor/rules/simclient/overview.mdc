@@ -2,6 +2,10 @@
 description: SimClient module overview — the single Python↔TypeScript seam over the Pokemon Showdown engine
 globs: sim/src/**/*.ts,src/sim_client.py
 alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - sim/src/
+  - src/sim_client.py
 ---
 
 # SimClient — battle-engine seam (read first)
@@ -13,12 +17,11 @@ resolution, terminal/payoff, and **cloning/forking** for tree search.
 ## Pieces
 - `sim/src/sim-worker.ts` — long-lived Node process; owns `Battle` objects; speaks line-delimited JSON over stdio.
 - `src/sim_client.py` — Python class that spawns/owns one worker subprocess (one per self-play worker).
-- `sim/src/clone-spike.ts` — runnable clone-determinism + reseed + latency benchmark (Milestone 0). `npx tsx src/clone-spike.ts`.
 - Builds on `sim/src/battle-runner.ts` (`packTeam`, `validateStatPoints`). The async `BattleStream` runner there is for **replays only**, not search.
 
 ## Authoritative design (read before changing the contract)
 - `docs/architecture/repo-architecture.md` §3.1 — the interface + measured fork cost (~1.6 ms, ~72 KiB/clone).
-- The SimClient plan — the settled decisions and build order.
+- `docs/plans/sim-client.md` — the settled decisions and remaining build order.
 
 ## v1 scope
 Self-play only: `new_battle(teamA, teamB)` → `open_search(live)` → `step` to terminal.

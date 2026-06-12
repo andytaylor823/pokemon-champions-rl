@@ -1,3 +1,10 @@
+---
+last_synced: 3c3811f
+watches:
+  - src/
+  - docs/architecture/
+---
+
 # CVPN (Neural Network) — Implementation Plan
 
 > Module ref: `docs/architecture/repo-architecture.md` §3.3

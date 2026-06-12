@@ -2,6 +2,9 @@
 description: Index of key sections and content in the Player of Games (SOG/GT-CFR) paper (PlayerOfGames.pdf, 63 pages)
 globs: PlayerOfGames.pdf
 alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - PlayerOfGames.pdf
 ---
 
 # Player of Games Paper — Section Index

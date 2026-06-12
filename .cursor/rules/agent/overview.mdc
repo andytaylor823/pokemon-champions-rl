@@ -1,6 +1,12 @@
 ---
 description: Project architecture, simulation engine, action space, and imperfect information constraints for the RL agent
 alwaysApply: true
+last_synced: 3c3811f
+watches:
+  - sim/src/
+  - src/
+  - docs/architecture/
+  - docs/plans/
 ---
 
 # Project Overview — Pokemon Champions RL Agent
@@ -37,7 +43,7 @@ Once the agent is strong, push toward unexploitable mixed strategies using ideas
 6. **Imperfect info (the real product)**: move past a *brief* determinized-MCTS baseline to **GT-CFR / Player of Games** (public belief states + CFR+ at search nodes); meta priors supply the opponent belief ranges
 7. **Nash hardening**: mixed strategies, robust to exploitation
 
-> **Sequencing philosophy (rebalanced toward shipping).** Milestones 3–5 (MCTS + perfect-info self-play) are a deliberately **brief pit-stop**: build them only well enough to (1) prove the infrastructure works end to end (simulate games and theoretical turns, encode state, mask actions, run the loop) and (2) show feasibility — a from-random agent self-improving into a semi-coherent battler that **reliably beats earlier versions of itself** (even while "cheating" with perfect info). Then pivot hard to the **GT-CFR endgame (milestone 6) as the north star**. Bias toward an agent that works in real games and toward visible, incremental progress over theoretical completeness. See `docs/gt-cfr-theory.md` §14.
+> **Sequencing philosophy (rebalanced toward shipping).** Milestones 3–5 (MCTS + perfect-info self-play) are a deliberately **brief pit-stop**: build them only well enough to (1) prove the infrastructure works end to end (simulate games and theoretical turns, encode state, mask actions, run the loop) and (2) show feasibility — a from-random agent self-improving into a semi-coherent battler that **reliably beats earlier versions of itself** (even while "cheating" with perfect info). Then pivot hard to the **GT-CFR endgame (milestone 6) as the north star**. Bias toward an agent that works in real games and toward visible, incremental progress over theoretical completeness. See `docs/architecture/gt-cfr-theory.md` §14.
 
 ## Action Space (Per Turn in Doubles)
 
@@ -58,9 +64,9 @@ During a battle, the agent cannot see:
 
 ## Simulation Engine
 
-- `@pkmn/sim` (TypeScript) is the battle engine — supports state save/restore via `Battle.toJSON()` / `Battle.fromJSON()`
-- **poke-env** (Python) interfaces with Showdown for playing real games but cannot save/restore mid-battle state
-- MCTS search loop runs in JS (state cloning is in-process and fast); crosses to Python only for neural net leaf evaluation
+- `pokemon-showdown` (full Smogon repo, TypeScript) is the battle engine — supports state save/restore via `State.serializeBattle()` / `State.deserializeBattle()` (see `showdown-engine-api.mdc`)
+- The `SimClient` seam (`src/sim_client.py` ↔ `sim/src/sim-worker.ts`) is the only boundary between Python and the engine
+- Search/training Python code will call into the engine via SimClient's clone/step/view protocol
 - **Do NOT reimplement battle rules** — always use Showdown's engine as source of truth
 
 See `theory-reference.mdc` (algorithmic theory pointer), `paper-index.mdc` (Player of Games paper reference).

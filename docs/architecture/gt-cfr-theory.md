@@ -12,12 +12,12 @@ This is the distilled, organized version of an extended theory discussion. It is
 
 **Related artifacts (do not duplicate — read these for their domains):**
 
-- `.cursor/rules/project-overview.mdc` — system architecture, milestones, action-space size, imperfect-info inventory.
-- `.cursor/rules/pokemon-champions-format.mdc` — Regulation M-A rules, stat system, Mega mechanics, doubles mechanics.
-- `.cursor/rules/legality-validation.mdc` — how to validate teams (CLI helper) without burning tokens.
+- `.cursor/rules/agent/overview.mdc` — system architecture, milestones, action-space size, imperfect-info inventory.
+- `.cursor/rules/game-domain/overview.mdc` — Regulation M-A rules, stat system, Mega mechanics, doubles mechanics.
+- `.cursor/rules/game-domain/legality.mdc` — how to validate teams (CLI helper) without burning tokens.
 - `research/notes.md` — algorithm survey (PPO / AlphaZero / R-NaD), simulation-engine choices (`@pkmn/sim`, poke-env), data sources for priors. **The engineering counterpart to this doc.**
-- `docs/state-encoding.md` — how the battle state is tokenized and consumed by the neural network. Covers entity tokens, field tokens, the Transformer architecture, belief-weighted candidate tokens, Phase 1 vs Phase 4 value-head designs, and alternatives considered. **The encoding/NN architecture counterpart to this doc.**
-- `docs/search-nn-interface.md` — when the NN is called during search, caching, deal sampling, the composite-private-state problem, the three-tier computation split (backbone/policy/value), and chance-node bucketing. **The runtime interface counterpart to this doc.**
+- `docs/architecture/state-encoding.md` — how the battle state is tokenized and consumed by the neural network. Covers entity tokens, field tokens, the Transformer architecture, belief-weighted candidate tokens, Phase 1 vs Phase 4 value-head designs, and alternatives considered. **The encoding/NN architecture counterpart to this doc.**
+- `docs/architecture/search-nn-interface.md` — when the NN is called during search, caching, deal sampling, the composite-private-state problem, the three-tier computation split (backbone/policy/value), and chance-node bucketing. **The runtime interface counterpart to this doc.**
 - `docs/article_summary*.md` — the long-form conversational Q&A derivations that this document distills. Go there for the verbose back-and-forth and additional examples.
 
 **Notation conventions:** display math in `$$ … $$`, inline math in `$ … $`. Player $i$; opponent $-i$. Strategies $\sigma$; the search/CFR iteration counter is $t$ (do **not** confuse it with the in-game turn number).
@@ -282,7 +282,7 @@ Iteration 1 already says "bet the King," which is correct. Across many iteration
 Vanilla CFR/CFR+ traverse the entire tree per iteration — fine for Kuhn (24 regret entries), impossible for Pokémon. Three tools, used together:
 
 1. **MCCFR (Monte Carlo CFR):** sample paths/subtrees per iteration instead of full traversal (outcome / external / public-chance sampling). Unbiased; cheaper iterations, higher variance.
-2. **Abstraction / bucketing:** collapse strategically-similar private states into a manageable set. **This is where Pokémon's continuous stat-point (EV) space and combinatorial item/move space get tamed** — via the meta-prior clustering (`meta_priors/clustering.py`): each species reduces to a few **archetype sets** (top-$k$ by prior), so the opponent's per-slot private space becomes "one of $k$ archetypes," and the history sum becomes finite. The meta-priors pipeline is the project's abstraction layer, not just flavor.
+2. **Abstraction / bucketing:** collapse strategically-similar private states into a manageable set. **This is where Pokémon's continuous stat-point (EV) space and combinatorial item/move space get tamed** — via the meta-prior clustering (`src/meta_priors/clustering.py`): each species reduces to a few **archetype sets** (top-$k$ by prior), so the opponent's per-slot private space becomes "one of $k$ archetypes," and the history sum becomes finite. The meta-priors pipeline is the project's abstraction layer, not just flavor.
 3. **Function approximation:** replace explicit tables with neural networks that generalize across info sets (next two sections).
 
 ### 9.1 Deep CFR (distinct from GT-CFR — know the difference)
@@ -415,7 +415,7 @@ It periodically publishes a checkpoint; self-play workers reload it. **System le
 - **Public state** — everything both players have observed: revealed Pokémon, revealed moves, items revealed by effect, HP, status, stat stages, field conditions (weather/terrain/Tailwind/Trick Room) **with their turn counters**, Mega availability.
 - **Private state** — your hidden info: back-row identities, unrevealed moves/items, stat-point spreads.
 - **Info set** — public state + *your* private state (you act on it). The **opponent's** info set bundles every private state consistent with what they have observed of you.
-- **Belief range** — a probability distribution over the opponent's possible private states, supplied by **meta priors** and reduced to top-$k$ **archetype sets** per species (Section 9, `meta_priors/`).
+- **Belief range** — a probability distribution over the opponent's possible private states, supplied by **meta priors** and reduced to top-$k$ **archetype sets** per species (Section 9, `src/meta_priors/`).
 
 **Per-turn tree structure** (how simultaneity, chance, and forced switches appear):
 
@@ -442,7 +442,7 @@ It periodically publishes a checkpoint; self-play workers reload it. **System le
 
 ## 14. Recommended build order
 
-Derived repeatedly across the discussion; reuse it as the default roadmap. (Cross-reference the milestones in `.cursor/rules/project-overview.mdc`.)
+Derived repeatedly across the discussion; reuse it as the default roadmap. (Cross-reference the milestones in `.cursor/rules/agent/overview.mdc`.)
 
 > **Priority (rebalanced toward shipping).** The objective is an agent that *works in real games*, reached through visible, celebratable increments — not theoretical completeness. Treat Phases 1–3 (the MCTS / determinization line) as a deliberately **brief pit-stop**, held only long enough to clear two exit criteria: (1) **infrastructure is proven** — we can simulate Champions games and theoretical turns, encode state, mask actions, and run the self-play loop end to end; and (2) **feasibility is shown** — a from-random agent becomes a semi-coherent battler that **reliably beats earlier versions of itself** (even while "cheating" with perfect information). The moment both hold, stop polishing the baseline and commit to **GT-CFR / Player of Games (Phase 4) as the north star and the real product.** The phases below are still the right *order*; this note rebalances how long to *dwell* in each.
 
@@ -509,7 +509,7 @@ $$
 
 **Internal artifacts**
 - `research/notes.md` — algorithm survey, sim-engine choices, data sources (engineering counterpart).
-- `.cursor/rules/project-overview.mdc`, `.cursor/rules/pokemon-champions-format.mdc`, `.cursor/rules/legality-validation.mdc`.
+- `.cursor/rules/agent/overview.mdc`, `.cursor/rules/game-domain/overview.mdc`, `.cursor/rules/game-domain/legality.mdc`.
 - `docs/article_summary*.md` — verbose conversational derivations this document distills.
 
 ---

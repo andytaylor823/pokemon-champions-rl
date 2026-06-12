@@ -2,7 +2,7 @@
 
 **Status:** Living reference / ground truth for the runtime interaction between the GT-CFR search and the CVPN neural network.
 **Audience:** The maintainer and any future coding agent working in this repo.
-**Scope:** When the NN is called during search, what it sees, what it returns, how results are cached and consumed, and how this scales from Kuhn poker to Pokémon VGC. Bridges the gap between the algorithmic theory (`docs/gt-cfr-theory.md`) and the encoding/architecture design (`docs/state-encoding.md`). Covers the composite-private-state problem, the three-tier computation split, MCCFR deal sampling, and chance-node bucketing — all from the perspective of "what computation happens at runtime."
+**Scope:** When the NN is called during search, what it sees, what it returns, how results are cached and consumed, and how this scales from Kuhn poker to Pokémon VGC. Bridges the gap between the algorithmic theory (`docs/architecture/gt-cfr-theory.md`) and the encoding/architecture design (`docs/architecture/state-encoding.md`). Covers the composite-private-state problem, the three-tier computation split, MCCFR deal sampling, and chance-node bucketing — all from the perspective of "what computation happens at runtime."
 
 ---
 
@@ -12,9 +12,9 @@ This is the distilled, organized version of a design discussion about how the se
 
 **Related artifacts (do not duplicate — read these for their domains):**
 
-- `docs/gt-cfr-theory.md` — the algorithmic theory (CFR, GT-CFR, two-loop model, training targets). **Read it first**; this document assumes familiarity with info sets, CFVs, regret matching, and the ephemeral regret table.
-- `docs/state-encoding.md` — token anatomy, Transformer architecture, belief-weighted candidates, Phase 1 vs Phase 4 value-head designs. **Read it second**; this document assumes familiarity with CLS tokens, candidate tokens, and the School A vs School B distinction.
-- `.cursor/rules/project-overview.mdc` — milestones, action space, system architecture.
+- `docs/architecture/gt-cfr-theory.md` — the algorithmic theory (CFR, GT-CFR, two-loop model, training targets). **Read it first**; this document assumes familiarity with info sets, CFVs, regret matching, and the ephemeral regret table.
+- `docs/architecture/state-encoding.md` — token anatomy, Transformer architecture, belief-weighted candidates, Phase 1 vs Phase 4 value-head designs. **Read it second**; this document assumes familiarity with CLS tokens, candidate tokens, and the School A vs School B distinction.
+- `.cursor/rules/agent/overview.mdc` — milestones, action space, system architecture.
 - `toy_examples/kuhn_poker/gt_cfr_search.py` — the working Kuhn implementation of GT-CFR search. Referenced throughout as the concrete example.
 - `toy_examples/kuhn_poker/network.py` — the Kuhn CVPN. Illustrates the "public-state-in, per-card-vector-out" pattern (which differs from the Pokémon design; see Section 4).
 
@@ -287,4 +287,4 @@ With chance bucketing (~4 outcomes per chance node), ~20 PUCT expansions per sea
 
 ---
 
-*If you are a future agent picking up implementation: this document covers only the runtime search–NN interface. For the algorithmic theory, read `docs/gt-cfr-theory.md`. For token design and architecture, read `docs/state-encoding.md`. For milestones and tooling, see `research/notes.md` and `.cursor/rules/project-overview.mdc`.*
+*If you are a future agent picking up implementation: this document covers only the runtime search–NN interface. For the algorithmic theory, read `docs/architecture/gt-cfr-theory.md`. For token design and architecture, read `docs/architecture/state-encoding.md`. For milestones and tooling, see `research/notes.md` and `.cursor/rules/agent/overview.mdc`.*

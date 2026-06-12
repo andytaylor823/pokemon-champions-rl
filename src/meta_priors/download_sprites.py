@@ -8,8 +8,8 @@ from pathlib import Path
 
 import requests
 
-_LEGAL_DIR = Path(__file__).resolve().parent.parent / "data" / "legal"
-_SPRITES_DIR = Path(__file__).resolve().parent.parent / "data" / "sprites"
+_LEGAL_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "legal"
+_SPRITES_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sprites"
 
 _SHOWDOWN_DEX_URL = (
     "https://play.pokemonshowdown.com/sprites/dex/{showdown_id}.png"

@@ -5,10 +5,10 @@
 **Scope:** The **Pokémon production system only**. This is a *module map* (responsibilities, interfaces, and where one implementation can be swapped for another), **not** a directory layout and **not** an implementation spec.
 
 **Companion docs (read for their domains; not duplicated here):**
-- `docs/gt-cfr-theory.md` — the algorithm (CFR, GT-CFR, the two-loop model, training targets). The ground truth; trusted deeply.
-- `docs/state-encoding.md` — token anatomy, Transformer, belief-weighted candidates, value-head designs.
-- `docs/search-nn-interface.md` — when the NN is called in search, caching, deal sampling, the three-tier split, chance bucketing.
-- `.cursor/rules/project-overview.mdc` — milestones, action space, imperfect-info inventory.
+- `docs/architecture/gt-cfr-theory.md` — the algorithm (CFR, GT-CFR, the two-loop model, training targets). The ground truth; trusted deeply.
+- `docs/architecture/state-encoding.md` — token anatomy, Transformer, belief-weighted candidates, value-head designs.
+- `docs/architecture/search-nn-interface.md` — when the NN is called in search, caching, deal sampling, the three-tier split, chance bucketing.
+- `.cursor/rules/agent/overview.mdc` — milestones, action space, imperfect-info inventory.
 
 > **A note on trust.** `gt-cfr-theory.md` was produced with Opus 4.8 and is trusted deeply. `state-encoding.md` and `search-nn-interface.md` were produced with Opus 4.6 — trusted *directionally*, but their specific numbers (token counts, `d_model`, K, ms estimates, sample counts) are tentative defaults to tune, not commitments. Numbers in this doc inherit that caveat and are marked accordingly.
 
@@ -71,28 +71,30 @@ Each entry: **Responsibility · Interface · Implementations (Phase 1 → Phase 
 
 **Responsibility.** Provide game mechanics — legal actions, state transitions (including chance resolution), terminal detection and payoff, and *cloning/forking* — without the rest of the system knowing Showdown, TypeScript, or the process boundary exists. This is the single home of the Python↔TS boundary.
 
-**Interface (Python-side, handle-based — the load-bearing design choice).** Heavy `Battle` objects stay inside the Node worker; Python holds opaque handles and exchanges only compact messages.
+**Interface (Python-side, handle-based — the load-bearing design choice).** Heavy `Battle` objects stay inside a per-worker Node subprocess; Python holds opaque handles and exchanges only compact, **engine-native** messages (structured snapshots + Showdown choice strings — no tensors, no protocol-log text). *Settled by interview; see the SimClient plan for the full rationale.*
 ```
-new_battle(team_a, team_b, format_id, seed) -> Handle
-clone(h: Handle) -> Handle                      # fork for search (toJSON/fromJSON inside Node)
-legal_actions(h, player) -> ActionMask          # canonical action indices (see §3.6)
-step(h, joint_action) -> StepResult             # apply both players' choices; resolve chance
-   StepResult = { child: Handle,
-                  chance: ChanceInfo,            # which outcome fired + its probability/bucket
-                  observation: PublicObservation,# what the encoder needs; NO full battle state
-                  terminal: bool, utility: float|None,
-                  revealed: RevealedInfo }       # info that just became public (drives belief updates)
-release(h) -> None                               # free a fork; bound the Node-side handle pool
+new_battle(team_a, team_b, seed) -> (handle, StateView)   # teams as structured sets; Node packs+validates
+open_search(from_handle=None) -> session                  # snapshot the live battle into a search-owned root
+step(h, choices: dict[Side,str], seed) -> StepResult      # clone parent, reseed to `seed`, resolve
+view(h) -> StateView
+release(h); close_search(session); close()
+   StateView   = { phase: teamPreview|move|forceSwitch|terminal,
+                   to_move: [sides that must act],
+                   legal:  { side -> raw Showdown request (move slots, targets, switches, canMega) },
+                   snapshot: <omniscient structured state: sides→pokemon, field, side conditions>,
+                   terminal: bool, utility: {p1: ±1}|None }
+   StepResult  = { child: handle, view: StateView,
+                   outcome: <what randomness fired this step, so Search can bucket> }
 ```
-Invariants callers rely on: handles are immutable snapshots (stepping returns a *new* handle); `observation` contains only legally-knowable information for the given perspective; chance is resolved *inside* `step` (the search decides whether to sample one outcome or enumerate buckets via a flag — see §3.5).
+Invariants callers rely on: **handles are immutable snapshots** — `step` clones internally and returns a *new* child handle, leaving the parent steppable with other choices/seeds. **The seed is mandatory** — cloning copies the PRNG state, so stepping a clone without reseeding repeats the same outcome; the search supplies a fresh seed per chance sample (§3.5). The state tells you *which side(s)* must act (simultaneous moves, unilateral forced switches, team preview all handled uniformly). Every clone in a search belongs to its `session` and is freed in one shot by `close_search` (it cannot leak); `release` exists for capping peak memory mid-search. v1 snapshots are **omniscient** — correct for self-play / perfect-info Phase 1; redaction/belief is a later encoder-layer concern.
 
-**Implementations.** *Today:* `sim/src/battle-runner.ts` runs a *full* game with two `Strategy` callbacks — it is the seed, not the seam. The first real build target is to extend it into a **persistent Node worker** exposing the calls above (JSON over stdio, or a local socket/HTTP service), backed by `Battle.toJSON()`/`fromJSON()` for `clone`. Team packing and the 66/32 stat-point validation already live there (`packTeam`, `validateStatPoints`).
+**Implementations.** Built on the **synchronous** engine API (`new Battle` + `setPlayer` + `makeChoices`) plus `State.serializeBattle`/`deserializeBattle` for cloning (the PRNG seed is part of the serialized state) — *not* the async `BattleStream`. The installed engine is the full `pokemon-showdown` package (the docs' `@pkmn/sim` reference is stale; same engine). Transport is a **persistent Node subprocess per worker, JSON-lines over stdio**. `sim/src/battle-runner.ts` (full-game `Strategy` runner) is retained only for replay export; its `packTeam`/`validateStatPoints` (66/32 stat points) are reused by the worker. **Status (built & tested):** the clone/reseed/latency spike, `sim/src/sim-worker.ts` (stdio worker), and the Python `SimClient` all exist and are covered by automated suites — `sim/tests/` (Vitest: worker dispatch units, clone-determinism/reseed integration) and `tests/integration/test_sim_client.py` (pytest: full Champions doubles game driven to terminal, re-seeding every step, then scratchpad cleanup verified), both wired into CI (`.github/workflows/test.yml`). **Remaining:** (a) *snapshot completeness* — the v1 snapshot drops volatile/status turn-counters, the Protect counter, and Substitute HP, all of which the Encoder's token anatomy wants; (b) a *structured* chance `outcome` — `step` currently returns the raw protocol-log delta, not the structured "what randomness fired" the interface above promises (so chance-bucketing in Search would have to parse log text today).
 
-**Seam.** The `SimClient` protocol. Realistically a **hypothetical seam** (one adapter: the `@pkmn/sim` worker; alternatives like poke-engine are rejected for lacking doubles/VGC correctness). It earns its place anyway via *locality*: every serialization, IPC, handle-lifecycle, and protocol-parsing concern is trapped here. Deletion test: delete it and the boundary smears into Search, Encoder, and Self-play.
+**Seam.** The `SimClient` protocol. Realistically a **hypothetical seam** (one adapter: the `pokemon-showdown` worker; alternatives like poke-engine are rejected for lacking doubles/VGC correctness). It earns its place anyway via *locality*: every serialization, IPC, handle-lifecycle, and snapshot-introspection concern is trapped here. Deletion test: delete it and the boundary smears into Search, Encoder, and Self-play. The transport (stdio JSON) is a nested swap point — socket/MessagePack can replace it behind the same Python interface if profiling demands.
 
 **Depth.** Deep — tiny interface, enormous hidden complexity (the entire battle engine + cross-language boundary + fork pool).
 
-> **Cost characteristics (answers the runtime-boundary question; benchmark before committing).** Dex load is a *one-time* per-process cost (~hundreds of ms–1s), amortized by keeping the worker alive. The recurring cost is per-call IPC + serialization; the handle design keeps it small by never shipping full battle state across the wire. Per-decision real-time play is comfortable; *self-play throughput* is where boundary overhead multiplies — mitigate with batching, the handle design, and one worker per parallel actor. **First thing to validate:** a spike that clones+steps a Champions doubles battle many times through a persistent worker and measures round-trip latency.
+> **Cost characteristics (measured by the Milestone-0 spike, `sim/src/clone-spike.ts`).** Dex load is a *one-time* per-process cost, amortized by keeping the worker alive. A fork (serialize → JSON round-trip → deserialize) **plus one step ≈ 1.6 ms**, **~72 KiB/clone** (~30 KiB serialized), and clone determinism + reseed variance are both verified. So a search tree of dozens of concrete states is ~tens of ms of fork compute and a few MiB — comfortable within a 60 s real-play turn. The IPC round-trip is on top (small messages only, by the handle design). *Self-play throughput* is where the per-fork cost multiplies — mitigate with one worker per parallel actor and, if needed, batching across the boundary.
 
 ### 3.2 `Encoder` — battle observation → tensors
 
@@ -159,13 +161,13 @@ update(belief, revealed) -> belief                               # Bayesian narr
 ```
 Invariants: deals are drawn from the **joint** distribution (respects item clause and team-building correlations — never independent per-slot draws); the agent's own state is known and is *not* part of a deal; "live support" shrinks as info is revealed and may *grow* a candidate back in once evidence makes it plausible.
 
-**Implementations.** *Legacy / reference:* the clustering-into-archetypes pipeline (`meta_priors/clustering.py`, `auto_cluster`, `ArchetypeSummary`) + the Streamlit explorer (`meta_priors/app.py`). *Target (Phase 4):* a **conditional sampler over real tournament sets** — top-K by empirical frequency, conditioned on species + revealed info + teammates, auto-refreshed from scrapes. Smoothing/backoff for sparse conditioning (kernel counting / factored fallback / small learned model) is the **main open problem** here.
+**Implementations.** *Legacy / reference:* the clustering-into-archetypes pipeline (`src/meta_priors/clustering.py`, `auto_cluster`, `ArchetypeSummary`) + the Streamlit explorer (`src/meta_priors/app.py`). *Target (Phase 4):* a **conditional sampler over real tournament sets** — top-K by empirical frequency, conditioned on species + revealed info + teammates, auto-refreshed from scrapes. Smoothing/backoff for sparse conditioning (kernel counting / factored fallback / small learned model) is the **main open problem** here.
 
 **Seam.** The "supply candidates + sample joint deals" interface is a **real seam** (clustering today, conditional sampler planned = two adapters). Phase 1 degenerates it to a delta (one candidate per slot, weight 1.0), so Phase 1 needs no belief model at all — it's off the critical path until Phase 4.
 
 **Depth.** Deep — hides scraping, legality correction, conditioning, and correlation structure behind three small calls.
 
-**Supporting sub-system — the data pipeline** (`meta_priors/legality.py`, `scrape_learnsets.py`, `download_sprites.py`, `data/`, `scripts/check_team_legality.py`). Responsibility: turn Limitless tournament JSON + scraped learnsets into clean, legal, queryable set data. Its own seam is the on-disk `data/` layout + the legality checker. Locality note from `tournament-data-pipeline.mdc`: Limitless does **not** validate legality, so cached tournament JSON is **manually corrected** after download — *never re-download a file that already exists* or you lose the fixes. (Flag to verify: `legality.py` references a `data/legal/moves.txt` that isn't on disk; confirm it imports cleanly.)
+**Supporting sub-system — the data pipeline** (`src/meta_priors/legality.py`, `scrape_learnsets.py`, `download_sprites.py`, `data/`, `scripts/check_team_legality.py`). Responsibility: turn Limitless tournament JSON + scraped learnsets into clean, legal, queryable set data. Its own seam is the on-disk `data/` layout + the legality checker. Locality note from `meta-priors/data-pipeline.mdc`: Limitless does **not** validate legality, so cached tournament JSON is **manually corrected** after download — *never re-download a file that already exists* or you lose the fixes. (Flag to verify: `legality.py` references a `data/legal/moves.txt` that isn't on disk; confirm it imports cleanly.)
 
 ### 3.5 `Search` — the inner-loop planner (the project's primary seam)
 
@@ -190,7 +192,7 @@ The caller samples one joint action from `strategy`, plays it via `SimClient`, a
 
 ### 3.6 The action space (a shared contract, not a module)
 
-A **stable canonical index `0..A`** over all joint actions, with legality expressed as a mask (choice-lock, disable, taunt, no-PP, forced-switch all flip mask bits). Three modules code against it: `Encoder` (emits `action_mask`), `CVPN` (policy head width `A`), and `SimClient` (translates an index ↔ a Showdown choice string like `"move heatwave 1, move protect"`). The index↔choice-string translation lives inside `SimClient`. Size ≈ ~100 joint actions/turn (*tentative*; `project-overview.mdc` §Action Space). Open sub-decision: a single flat joint head vs **per-Pokémon factored heads**.
+A **stable canonical index `0..A`** over all joint actions, with legality expressed as a mask (choice-lock, disable, taunt, no-PP, forced-switch all flip mask bits). Three modules code against it: `Encoder` (emits `action_mask`), `CVPN` (policy head width `A`), and `SimClient` (translates an index ↔ a Showdown choice string like `"move heatwave 1, move protect"`). The index↔choice-string translation lives inside `SimClient`. Size ≈ ~100 joint actions/turn (*tentative*; `agent/overview.mdc` §Action Space). Open sub-decision: a single flat joint head vs **per-Pokémon factored heads**.
 
 ### 3.7 `SelfPlay` — outer-loop data generation
 
@@ -242,7 +244,7 @@ Nothing below is a rewrite; each is swapping one adapter behind a stable interfa
 | `SelfPlay`/`Replay`/`Trainer` | scalar value target | vector value target | tuple value-shape only |
 | `Evaluation` | win-rate vs random / prior selves | + approximate exploitability | metric swap |
 
-Exit criteria for leaving Phase 1 (from `project-overview.mdc` §Milestones and `gt-cfr-theory.md` §14): (1) infrastructure proven end-to-end (simulate games + theoretical turns, encode, mask, run the loop) and (2) a from-random agent reliably beats earlier versions of itself. Then pivot hard to Phase 4.
+Exit criteria for leaving Phase 1 (from `agent/overview.mdc` §Milestones and `gt-cfr-theory.md` §14): (1) infrastructure proven end-to-end (simulate games + theoretical turns, encode, mask, run the loop) and (2) a from-random agent reliably beats earlier versions of itself. Then pivot hard to Phase 4.
 
 ---
 
@@ -265,8 +267,8 @@ These are genuine forks the map deliberately leaves open; they belong in design 
 Not architecture, but worth recording so future reviews don't trip on it:
 
 - **`pyproject.toml` carries abandoned deps.** `stable-baselines3`, `ray[rllib]`, `gymnasium`, `tensorboard` reflect an earlier PPO/RLlib plan that the rebalanced strategy dropped (the `mcts-vs-alphazero` transcript explicitly calls PPO "a detour"). PPO is **not** part of this architecture. Prune when convenient (keep `ray` only if chosen for §6.6).
-- **`sim/` is a full-game runner, not yet a search seam.** `battle-runner.ts` plays games with `Strategy` callbacks; the `clone`/`step`/handle interface of §3.1 is the first thing to build on top of it.
-- **`research/notes.md` predates the rebalance** — it frames PPO as "Phase 1 workhorse" and AlphaZero as "Phase 2." Treat `gt-cfr-theory.md` §14 + `project-overview.mdc` as the current phasing; `research/notes.md` is still the right home for sim-engine and data-source rationale.
+- **`sim/` now exposes the search seam (done — this note was stale).** An earlier revision said the `clone`/`step`/handle interface was "the first thing to build"; it is now built and tested. `sim/src/sim-worker.ts` implements the handle protocol and `src/sim_client.py` wraps it, covered by passing Vitest + pytest suites (`sim/tests/`, `tests/integration/test_sim_client.py`). `battle-runner.ts` (full-game `Strategy` runner) is retained only for replay export. The remaining SimClient work is snapshot completeness + structured chance outcome, not the seam itself (see §3.1).
+- **`research/notes.md` predates the rebalance** — it frames PPO as "Phase 1 workhorse" and AlphaZero as "Phase 2." Treat `gt-cfr-theory.md` §14 + `agent/overview.mdc` as the current phasing; `research/notes.md` is still the right home for sim-engine and data-source rationale.
 
 ---
 

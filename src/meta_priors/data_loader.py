@@ -16,7 +16,7 @@ from meta_priors.legality import (
     validate_standings,
 )
 
-_TOURNAMENTS_DIR = Path(__file__).resolve().parent.parent / "data" / "tournaments"
+_TOURNAMENTS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "tournaments"
 
 logger = logging.getLogger(__name__)
 

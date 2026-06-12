@@ -51,7 +51,7 @@ def update_file(path: Path, target_sha: str, *, dry_run: bool = False) -> str:
 
     Returns a status string: 'updated', 'already-current', 'inserted', or 'no-frontmatter'.
     """
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
 
     # Check whether the file has YAML frontmatter (starts with ---)
     if not text.startswith("---"):
@@ -64,7 +64,7 @@ def update_file(path: Path, target_sha: str, *, dry_run: bool = False) -> str:
             return "already-current"
         new_text = SYNC_RE.sub(rf"\g<1>{target_sha}", text, count=1)
         if not dry_run:
-            path.write_text(new_text)
+            path.write_text(new_text, encoding="utf-8")
         return "updated"
 
     # No last_synced line — insert one before the closing ---
@@ -77,7 +77,7 @@ def update_file(path: Path, target_sha: str, *, dry_run: bool = False) -> str:
     insert_pos = frontmatter_hits[1].start()
     new_text = text[:insert_pos] + f"last_synced: {target_sha}\n" + text[insert_pos:]
     if not dry_run:
-        path.write_text(new_text)
+        path.write_text(new_text, encoding="utf-8")
     return "inserted"
 
 
@@ -100,7 +100,7 @@ def main() -> None:
     for f in files:
         rel = f.relative_to(REPO_ROOT)
         status = update_file(f, target, dry_run=args.dry_run)
-        # Color-code output for readability
+        # Symbol-prefix output for readability
         symbol = {"updated": "~", "inserted": "+", "already-current": "=", "no-frontmatter": "!"}[status]
         print(f"  [{symbol}] {rel}  ({status})")
 

@@ -1,0 +1,60 @@
+---
+description: How tournament data is downloaded, cached, validated, and manually corrected
+globs: src/meta_priors/**/*.py,data/tournaments/**,data/legal/**
+alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - src/meta_priors/
+  - data/tournaments/
+  - data/legal/
+---
+
+# Tournament Data Pipeline
+
+## Data Source: Limitless TCG API
+
+Tournament standings come from `play.limitlesstcg.com`. Two API endpoints are used:
+- **Details**: `GET /api/tournaments/{id}/details` — name, date, player count, organizer, phases
+- **Standings**: `GET /api/tournaments/{id}/standings` — full player list with decklists
+
+## Storage Layout
+
+```
+data/tournaments/
+  _tournaments_meta.json          # Index file — NOT standings data
+  sitrus-series-champions-100-to-1st.json
+  wolfey-patreon-tournament-pokémon-champions-2.json
+  vgc-trainer-school-champions-format-m-a-2.json
+```
+
+- **Standings files** are named by sanitizing the tournament name from the details endpoint (lowercase, special chars removed, spaces → hyphens). Legacy `{hex_id}.json` filenames are still accepted for cache hits.
+- **`_tournaments_meta.json`** is keyed by tournament ID. Each entry has `name`, `date`, `downloaded`, `url`, and `tournament_id`. It is updated automatically when `fetch_standings_raw` downloads a new tournament.
+- `load_all_tournaments()` explicitly skips `_tournaments_meta.json` via the `TOURNAMENTS_META_FILENAME` constant.
+
+## Download Flow (`legality.py`)
+
+1. `fetch_standings_raw(tournament_id)` checks for a cache hit (`_find_cached`)
+2. On miss: fetches standings, then fetches details for the filename slug
+3. Writes `{slug}.json` to `data/tournaments/`
+4. Calls `_update_tournaments_meta` to upsert the tournament into `_tournaments_meta.json`
+
+## Loading Flow (`data_loader.py`)
+
+- `load_all_tournaments()` globs `data/tournaments/*.json`, skips the meta file, parses each with `parse_standings`
+- `parse_standings` reads each entry's `decklist` array, collapses mega forms to base species, and builds `PokemonSet` / `Team` dataclasses
+- The Streamlit app (`app.py`) calls `load_all_tournaments()` — it does **not** run `validate_standings` on the cached files
+
+## Legality Validation (`legality.py`)
+
+Legal lists are in `data/legal/`: `pokemon.txt`, `items.txt`, `moves.txt` (one name per line, `#` comments), and `learnsets.json` (per-species move lists scraped from pokemon-zone.com). These are loaded at import time into module-level `LEGAL_POKEMON`, `LEGAL_ITEMS`, `LEGAL_MOVES`, `LEARNSETS`.
+
+`validate_standings(raw)` checks every mon in every decklist against these lists and returns a `LegalityReport` with fuzzy suggestions via `difflib`.
+
+## Manual Corrections to Cached Tournament Data
+
+**The Limitless site does not validate legality.** Players submit their own decklists and frequently make errors. After downloading, we run the legality checker and manually fix the cached JSON files. Corrections fall into two categories:
+
+1. **Substitution** — when the intended value is obvious (e.g. "Fusion Flare" on Incineroar → "Flare Blitz"), replace the `attacks` entry in the cached JSON directly.
+2. **Deletion** — when the intended value is ambiguous (e.g. "Play Rough" on Basculegion, which learns nothing similar), delete the move entry from the `attacks` array rather than guess. A 3-move set is better than a wrong 4-move set.
+
+Because of these manual edits, **never re-download a tournament that already has a cached file** without checking whether corrections have been applied. The cache-hit path in `fetch_standings_raw` protects against accidental overwrites, but deleting the cached file and re-fetching would lose all manual fixes.

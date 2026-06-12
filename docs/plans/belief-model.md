@@ -1,3 +1,10 @@
+---
+last_synced: 3c3811f
+watches:
+  - src/meta_priors/
+  - docs/architecture/
+---
+
 # BeliefModel — Implementation Plan
 
 > Module ref: `docs/architecture/repo-architecture.md` §3.4

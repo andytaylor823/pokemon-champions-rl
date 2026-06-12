@@ -1,0 +1,60 @@
+---
+description: Architecture of the meta_priors package — build clustering, prior computation, and the Streamlit explorer
+globs: src/meta_priors/**/*.py
+alwaysApply: false
+last_synced: 3c3811f
+watches:
+  - src/meta_priors/
+---
+
+# Meta Priors Package
+
+`meta_priors/` produces **per-species archetype priors** from tournament data. These priors tell the RL agent what builds an opponent is likely running given partial observations (revealed moves, item, ability). The package has three layers: data loading, clustering, and an interactive Streamlit dashboard.
+
+## Module Responsibilities
+
+| Module | Role |
+|---|---|
+| `data_loader.py` | Parse raw Limitless API JSON into `PokemonSet` / `Team` dataclasses; build a species → sets index. Mega forms collapse to base species. All frequencies are weighted by `games_played`. |
+| `legality.py` | Legal lists, legality validation, Limitless API access, and tournament caching. Also the data pipeline rule's concern — see `data-pipeline.mdc`. |
+| `clustering.py` | Distance computation, clustering algorithms, silhouette-based auto-k, and the hard-partition pipeline. |
+| `app.py` | Streamlit dashboard — species selection, weight tuning, archetype cards, and the interactive conditional-prior panel. |
+| `check_legality.py` | Thin CLI wrapper around `legality.main()`. |
+| `scrape_learnsets.py` | One-shot scraper for pokemon-zone.com learnsets → `data/legal/learnsets.json`. |
+| `download_sprites.py` | One-shot downloader for Showdown CDN sprites → `data/sprites/`. |
+
+## Clustering Pipeline (`clustering.py`)
+
+Build clustering happens in two stages:
+
+1. **Hard partition by set-defining item** — Mega Stones and Choice Scarf fundamentally change how a Pokemon plays, so sets carrying them are split into their own archetype before any distance-based clustering. The set of "set-defining items" is maintained as a constant.
+
+2. **Sub-cluster the remainder** — within the non-set-defining partition, a weighted distance matrix (Jaccard on moves, tiered item distance, binary ability distance) is computed and fed to agglomerative clustering. An auto-k routine walks candidate k values and picks the simplest k that clears a silhouette threshold, with a minimum-gain guard to avoid spurious splits.
+
+The output is a list of `ArchetypeSummary` objects carrying weighted move/item/ability frequency distributions and a `partition_key` label (the set-defining item name, or `None` for the general partition).
+
+### Design intent
+
+- **Weights are tunable at runtime** via `DistanceWeights`. The dashboard exposes sliders so the user can experiment.
+- Tiered item distance gives full weight to set-defining item differences but reduced weight to swaps between non-defining items (berries, Focus Sash, etc.), treating those as tuning choices within the same archetype.
+- Mega mirrors (both sets hold a Mega Stone) zero out the ability weight because mega ability is fixed.
+
+## Streamlit Dashboard (`app.py`)
+
+The dashboard is the primary interface for inspecting and validating the clustering. Key sections:
+
+- **Species selector** — sorted by total game-appearances, with search filtering and sprite display.
+- **Distance weight sliders + clustering controls** — method (agglomerative / DBSCAN), linkage, auto-k toggle, manual k.
+- **Meta Prior panel** — the user pins known observations (moves, item, ability) via pill selectors. The app filters sets matching those observations and displays a conditional frequency distribution. Archetype weights update from prior → posterior as observations narrow the candidate builds.
+- **Archetype cards** — each card shows move frequencies (bar chart), item/ability distributions, and top teammates with sprites.
+- **Raw sets table + distance heatmap** — expandable sections for inspecting individual sets and the distance matrix.
+
+### Caching
+
+`get_data()` is `@st.cache_data`-decorated and serialises `PokemonSet` objects to plain dicts (because frozen dataclasses with frozensets aren't natively cacheable by Streamlit). The `_rebuild_sets` helper reconverts them when needed for clustering.
+
+## Offline Utility Scripts
+
+`scrape_learnsets.py` and `download_sprites.py` are run once (or occasionally refreshed) and write to `data/legal/` and `data/sprites/` respectively. They are not part of the app's runtime path — the app reads from those directories at import time.
+
+See `data-pipeline.mdc` (tournament data download, caching, and manual corrections).

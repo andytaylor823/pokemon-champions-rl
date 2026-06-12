@@ -1,0 +1,50 @@
+---
+description: What distinguishes Pokemon Champions from mainline Pokemon games and other competitive formats
+alwaysApply: true
+last_synced: 3c3811f
+watches:
+  - data/legal/
+---
+
+# Pokemon Champions — Competitive Doubles Format
+
+Pokemon Champions (Switch, April 2026) is the official VGC platform for the 2026 Pokemon World Championships. It is NOT a mainline game — it has distinct mechanics.
+
+## Game Format: Regulation M-A Doubles
+
+- **Bring 6, pick 4** — each player builds a team of 6 but selects 4 for each battle during a 90-second team preview
+- **Double battle** — 2 Pokemon active per side at all times (until one side has fewer remaining)
+- **Level 50** — all Pokemon are normalized to level 50 for battle
+- **Species clause** — no duplicate species on a team
+- **Item clause** — no duplicate held items on a team
+- **Limited dex** — ~195 fully-evolved Pokemon from all generations, no unevolved forms. Paldea Origin Mark required.
+- **Time limits** — 10 min per player, 90 sec team preview, 60 sec per turn
+
+## Stat System (Different from Mainline Games)
+
+Pokemon Champions replaces the traditional EV/IV system:
+
+- **IVs do not exist** — all Pokemon have an implicit 31 IV in every stat
+- **Stat Points replace EVs** — 66 total points, max 32 per stat (vs 510 EVs / 252 per stat in mainline)
+- **Stat formula at level 50:**
+  `floor((floor((2 * Base + 31 + StatPoints) * 50 / 100) + 5) * Nature)`
+  HP uses a different formula (add Level + 10 instead of + 5, no nature multiplier)
+- **Natures (Stat Alignment)** — still +10% / -10% to two non-HP stats, freely selectable
+- **Key difference from EVs**: 66 stat points gives 1 more point of budget than the classic EV equivalent of 65 (510 EVs / 8 = 63.75, rounded = 63, plus the first 4 of each stat = ~65). This matters for specific calcs.
+
+## Battle Gimmick: Mega Evolution via Omni Ring
+
+- **Mega Evolution** — available for 59 species. Requires Mega Stone held item. Once per battle; if your Mega faints, you cannot Mega another.
+- Terastallization, Z-Moves, and Dynamax are NOT currently available in Regulation M-A.
+
+## Key Competitive Mechanics (Doubles-Specific)
+
+- **Protect** — blocks all damage for one turn; fails more often if used consecutively. Central to doubles strategy.
+- **Speed control** — Tailwind (x2 speed, 4 turns), Trick Room (slow moves first, 5 turns), Icy Wind / Electroweb (lower opponent speed). Speed recalculates after each action within a turn.
+- **Weather** — Rain, Sun, Sand, Snow. Set by abilities (Drizzle, Drought, etc.) or moves. Lasts 5 turns (8 with held item). Affects damage, speed (via Swift Swim, etc.), and enables/disables certain moves.
+- **Field conditions are turn-counted** — planning around their expiry is a core skill the agent must learn.
+- **Intimidate** — lowers opposing Attack on switch-in. Extremely common in doubles; affects team preview decisions.
+- **Fake Out** — priority move that flinches, only works on first turn after switch-in. Defines many opening sequences.
+- **Redirecting** — moves like Follow Me / Rage Powder force opponents to target the redirector. Key doubles mechanic.
+
+See `stat-points.mdc` (stat system details), `legality.mdc` (team validation CLI).

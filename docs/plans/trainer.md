@@ -1,3 +1,10 @@
+---
+last_synced: 3c3811f
+watches:
+  - src/
+  - docs/architecture/repo-architecture.md
+---
+
 # Trainer — Implementation Plan
 
 > Module ref: `docs/architecture/repo-architecture.md` §3.8

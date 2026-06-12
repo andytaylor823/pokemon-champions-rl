@@ -1,3 +1,10 @@
+---
+last_synced: 3c3811f
+watches:
+  - sim/src/
+  - src/sim_client.py
+---
+
 # SimClient — Implementation Plan
 
 > Module ref: `docs/architecture/repo-architecture.md` §3.1

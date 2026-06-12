@@ -1,0 +1,29 @@
+---
+description: Pointer to the algorithmic theory ground-truth (AlphaZero / CFR / GT-CFR) for this project
+alwaysApply: true
+---
+
+# Algorithmic Theory: Read the Ground-Truth Doc
+
+The theoretical backbone of this project (search + self-play for imperfect-information Pokémon VGC) is documented in **`docs/architecture/gt-cfr-theory.md`**. Treat it as the canonical reference.
+
+**Read it before** working on: MCTS, CFR / CFR+ / Deep CFR, GT-CFR / Player of Games, the policy/value (CVPN) network, the search loop, self-play training, belief/state encoding, or anything touching the RL agent's decision-making.
+
+For **state encoding and NN architecture** (how the battle state is tokenized, the Transformer design, belief-weighted candidate tokens, Phase 1 vs Phase 4 value heads), read **`docs/architecture/state-encoding.md`** alongside the theory doc. It covers the representation layer that sits between the simulator and the network.
+
+For **search–NN runtime interface** (when the NN is called, caching, deal sampling, the composite-private-state problem, the three-tier computation split, chance-node bucketing), read **`docs/architecture/search-nn-interface.md`**. It bridges the theory doc and the encoding doc with concrete runtime mechanics.
+
+It covers, with worked examples (Kuhn poker) and collected equations:
+
+- The **two-loops** model: inner-loop search at one decision vs. outer-loop training across self-play.
+- AlphaZero (PUCT, two heads, MCTS as policy improvement) and why naive MCTS fails here (**strategy fusion**).
+- Game-theory primitives, **regret / regret matching**, CFR, CFR+.
+- **GT-CFR / Player of Games**: the CVPN's two heads (vector counterfactual-values + policy prior), the CFR+ regret-update / PUCT-expansion phases, training targets.
+- Mapping onto VGC (public/private/info-set, simultaneous-move + chance-node tree structure) and the phased **build order**.
+
+**Companion docs (do not duplicate; reference them):**
+- `docs/architecture/search-nn-interface.md` — runtime interface: NN call patterns, caching, MCCFR deal sampling, composite private states, three-tier split, chance bucketing.
+- `research/notes.md` — engineering counterpart: algorithm survey, sim engine (`@pkmn/sim`), data sources, milestones.
+- `.cursor/rules/agent/overview.mdc`, `.cursor/rules/game-domain/overview.mdc`, `.cursor/rules/game-domain/legality.mdc`.
+
+When the theory in `docs/architecture/gt-cfr-theory.md` is extended or corrected, keep that doc as the single source of truth rather than re-deriving theory inline in code or chat.

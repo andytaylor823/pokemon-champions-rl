@@ -1,0 +1,92 @@
+# TypeScript Testing Quick Reference (for Python Developers)
+
+The maintainer works primarily in Python. This rule gives agents the minimum TS/Vitest context needed to write and maintain tests in `sim/tests/`.
+
+## Running Tests
+
+```bash
+cd sim
+npm test          # run all tests once (vitest run)
+npm run test:watch  # re-run on file changes (vitest watch)
+```
+
+## Vitest API (the Essentials)
+
+Vitest is API-compatible with Jest. The key primitives:
+
+```typescript
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+
+describe("group name", () => {
+  beforeAll(() => { /* runs once before all tests in this describe */ });
+  afterAll(() => { /* runs once after all tests */ });
+  beforeEach(() => { /* runs before each test */ });
+
+  it("test name", () => {
+    expect(value).toBe(expected);           // strict equality (===)
+    expect(value).toEqual(expected);        // deep equality
+    expect(value).toContain(substring);     // string/array contains
+    expect(value).toBeDefined();            // not undefined
+    expect(value).toBeNull();               // is null
+    expect(value).toBeGreaterThan(n);       // numeric
+    expect(fn).toThrow(/regex/);            // function throws matching error
+    expect(value).toHaveProperty("key");    // object has property
+    expect(arr).toHaveLength(n);            // array/string length
+  });
+
+  it("async test", async () => {
+    const result = await someAsyncFn();     // async tests MUST use async/await
+    expect(result).toBeDefined();
+  });
+});
+```
+
+## How `tsx` Works
+
+The project uses [tsx](https://github.com/privatenumber/tsx) to run TypeScript directly — no separate compile step. Vitest has native TS support and does not need tsx, but standalone scripts (like the sim-worker) are run with `npx tsx src/sim-worker.ts`.
+
+## The `sim/` Package Structure
+
+```
+sim/
+  package.json          # deps: pokemon-showdown, devDeps: vitest, tsx, typescript
+  vitest.config.ts      # test config — points at tests/**/*.test.ts
+  tsconfig.json         # TypeScript config — includes src/ and tests/
+  src/
+    types.ts            # BattleResult, Strategy types
+    battle-runner.ts    # async BattleStream runner, packTeam, validateStatPoints
+    sim-worker.ts       # sync worker (JSON-RPC over stdio), dispatch, handle registry
+    replay-export.ts    # HTML replay generation
+  tests/
+    battle-runner.test.ts
+    sim-worker.test.ts
+    integration/
+      battle.test.ts
+      e2e-battle.test.ts
+```
+
+## Imports
+
+Tests import from source using relative paths:
+
+```typescript
+import { packTeam } from "../src/battle-runner";           // from tests/
+import { packTeam } from "../../src/battle-runner";        // from tests/integration/
+import { dispatch, resetState } from "../src/sim-worker";  // from tests/
+```
+
+The Showdown engine is imported via CommonJS `require` (not ES import) because it doesn't ship type declarations:
+
+```typescript
+const { Battle } = require("pokemon-showdown");
+const { State } = require("pokemon-showdown/dist/sim/state");
+```
+
+## Common Gotchas
+
+1. **Async tests need `await`.** If a test calls an async function without `await`, it silently passes even if the assertion would fail.
+2. **Showdown dex loading is slow on first import** (~50ms). Use `beforeAll` for one-time setup if importing the engine.
+3. **Module-level side effects.** TS modules can have code that runs at import time. Use the `require.main === module` guard (see `conventions.mdc`) to prevent `main()` from running when imported for testing.
+4. **Mutable global state.** `sim-worker.ts` uses global maps for handles/sessions. Always call `resetState()` in `beforeEach` to isolate tests.
+5. **`toBe` vs `toEqual`.** `toBe` is `===` (reference equality) — use for primitives. `toEqual` does deep comparison — use for objects and arrays.
+6. **Packed format strips spaces.** Showdown's `Teams.pack()` removes spaces from identifiers: `"Charizardite Y"` becomes `"CharizarditeY"`, `"Heat Wave"` becomes `"HeatWave"`.

@@ -1,0 +1,62 @@
+# Test Writing Conventions
+
+## File Naming and Placement
+
+- **TypeScript:** `*.test.ts` files in `sim/tests/` (unit) or `sim/tests/integration/` (integration/E2E)
+- **Python:** `test_*.py` files in `tests/unit/`, `tests/integration/`, or `tests/e2e/`; functions prefixed `test_`, classes prefixed `Test`
+
+Place tests in the right subdirectory by type:
+- `tests/unit/` — fast, no subprocesses, no external deps
+- `tests/integration/` — multi-component (e.g. Python ↔ Node worker)
+- `tests/e2e/` — full system tests
+
+## Determinism
+
+All battle tests **must** use fixed seeds. Non-deterministic tests break CI and waste debugging time.
+
+```typescript
+// TS — always pass a seed to BattleRunner or Battle constructor
+new BattleRunner({ formatId: "gen9championsvgc2026regma", teamA, teamB, seed: [1, 2, 3, 4] });
+```
+
+```python
+# Python — always pass a seed to new_battle and step
+handle, view = sc.new_battle(TEAM_A, TEAM_B, seed=[1, 2, 3, 4])
+res = sc.step(handle, choices, seed=[10, 20, 30, 40])
+```
+
+## Never Reimplement Battle Rules
+
+Tests must exercise the Showdown engine, not reimplement mechanics. If you need to verify a battle outcome, run the engine and assert on the result — never hand-calculate damage or predict outcomes in test code.
+
+## The `require.main === module` Guard (TypeScript)
+
+TypeScript modules that have a `main()` entry point (like `sim-worker.ts`) use:
+
+```typescript
+if (require.main === module) {
+  main();
+}
+```
+
+This is the TypeScript equivalent of Python's `if __name__ == "__main__"`. It prevents `main()` from running when the module is imported for testing, allowing direct unit testing of exported functions like `dispatch()`.
+
+When creating new TS modules with a main entry point, **always use this guard** and export functions that need testing.
+
+## Mutable Module State in TS
+
+If a module has global mutable state (like sim-worker's handle registry), export a `resetState()` function and call it in `beforeEach`:
+
+```typescript
+import { dispatch, resetState } from "../src/sim-worker";
+
+beforeEach(() => resetState());
+```
+
+## TypeScript Integration Tests
+
+Place in `sim/tests/integration/`. These test the real engine behavior (clone determinism, full battles, replay generation) but still run in-process — no subprocess needed.
+
+## Shared Test Data
+
+Both TS and Python tests use the same two reference teams (TEAM_A / TEAM_B). If these teams need updating (e.g. for a format change), update them in all test files. The source of truth for legality is `scripts/check_team_legality.py`.

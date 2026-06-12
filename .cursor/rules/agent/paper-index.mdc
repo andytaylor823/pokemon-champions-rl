@@ -1,0 +1,99 @@
+---
+description: Index of key sections and content in the Player of Games (SOG/GT-CFR) paper (PlayerOfGames.pdf, 63 pages)
+globs: PlayerOfGames.pdf
+alwaysApply: false
+---
+
+# Player of Games Paper — Section Index
+
+The paper is 63 pages: 27 main text + 36 supplementary. Page markers appear as `-- N of 63 --`.
+
+## Main Text Sections
+
+| Section | Page | Position | Lines |
+|---|---|---|---|
+| Abstract + Title | p1 | full page | 1–31 |
+| Introduction | p2 | top | 34–75 |
+| Background and Terminology (FOSG formalism, info states, beliefs, Nash) | p3 bottom–p4 top | starts ~2/3 down p3 | 85–166 |
+| Tree Search and Machine Learning (minimax → MCTS → AlphaZero recap) | p4 bottom–p5 top | starts ~2/3 down p4 | 167–197 |
+| Game-Theoretic Reasoning and CFR (CFR, CFR+, public tree CFR) | p5 bottom–p6 top | starts ~2/3 down p5 | 198–248 |
+| Imperfect Information Search, Decomposition, and Re-Solving | p6 middle–p7 top | | 249–297 |
+| Related Work (ReBeL, Smooth UCT, OOS, Deep CFR, R-NaD, etc.) | p7 bottom–p9 top | starts ~2/3 down p7 | 298–415 |
+| Descriptions of Challenge Domains (chess, Go, poker, Scotland Yard) | p9 middle–p10 top | | 379–415 |
+| Results — Algorithm Summary (high-level SOG overview) | p10 middle | | 416–435 |
+| Theoretical Results (Theorem 1 & 2 informal) | p10 bottom–p11 top | | 436–451 |
+| Experimental Results (exploitability in Leduc & small Scotland Yard) | p11 middle–p12 | | 451–491 |
+| Results in Challenge Domains (chess Elo, Go Elo, poker mbb/h, Scotland Yard) | p12–p13 | | 492–567 |
+| Discussion | p13 bottom–p14 top | starts ~2/3 down p13 | 572–595 |
+| **Materials and Methods** | **p14** | **starts mid-page** | **596–** |
+| — CVPN definition (value head = vector of CFVs, policy head = prior) | p14 middle | | 601–612 |
+| — **Search via Growing-Tree CFR** (GT-CFR two-phase structure) | p14 bottom–p16 | **the core algorithm section** | 613–661 |
+| — Modified Continual Re-solving | p16 middle–p17 top | | 662–705 |
+| — Performance Guarantees (Theorem 1 & 2 formal, complexity analysis) | p17 | full page | 706–766 |
+| — Data Generation via Sound Self-play | p18 top–middle | | 767–780 |
+| — Training Process (query collection, targets, losses) | p18 middle–p19 | | 781–815 |
+| — Recursive Queries | p19 middle | | 816–824 |
+| — Consistency of Training Process | p19 bottom–p20 top | | 825–848 |
+| References | p20–p27 | | 849–1121 |
+
+## Supplementary Materials
+
+| Section | Page | Lines |
+|---|---|---|
+| Network Architecture and Optimization (loss = Huber + KL, LR decay) | p37 | 1387–1404 |
+| **Algorithm 1 pseudocode — GT-CFR** (the loop, CFR call, GROW procedure) | **p38–p39** | 1424–1448 |
+| **Algorithm 2 pseudocode — Sound Self-play** (self-play controller, query solver) | **p40–p41** | 1453–1517 |
+| Implementation notes (distributed actors/trainers, no warm-starting) | p41 bottom | 1522–1419 |
+| Poker Betting Abstraction | p42 top | 1526–1542 |
+| IS-MCTS exploitability results (shows IS-MCTS is exploitable) | p42 bottom–p43 | 1551–1582 |
+| Standard RL exploitability (DQN, A2C, Q-learning all exploitable) | p43 middle | 1572–1582 |
+| Proofs of Theorems (Lemmas 1–3, Theorems 3–5) | p44–p53 | 1583–2322 |
+
+## Key Figures and Tables
+
+| Figure/Table | Page | What it shows |
+|---|---|---|
+| Figure 1 | p28 | Public belief state β structure diagram |
+| Figure 2 | p29 | Depth-limited CFR with decomposition |
+| Figure 3 | p30 | Exploitability vs training steps (Leduc + Scotland Yard) |
+| Figure 4 | p32 | SOG vs AlphaZero Elo scaling with NN evals (chess + Go) |
+| Table 1 | p31 | Elo ratings: SOG vs AlphaZero vs Stockfish/Pachi |
+| Table 2 | p33 | Poker mbb/h: SOG vs Slumbot vs other agents |
+| Figure 5 | p33 | SOG win rate vs PimBot (Scotland Yard) |
+| **Figure 6** | **p34** | **CVPN architecture diagram** (beliefs → values + policies) |
+| **Figure 7** | **p35** | **GT-CFR one-iteration overview** (regret update + expansion phases) |
+| Figure 8 | p36 | Full SOG training process (actors, query solver, trainer) |
+| Table S1 | p58 | NN architectures per game (ResNet for chess/Go, MLP for poker/SY) |
+| **Table S2** | **p59** | **All hyperparameters per game** (LR, buffer size, weights, etc.) |
+| Tables S3–S4 | p60–p61 | Full Elo tournament results (chess, Go) |
+
+## Specific Findings (extend this list as more are located)
+
+**SOG(s, c) notation** — p14 bottom, "Search via Growing-Tree CFR" section (line ~620):
+- `s` = total expansion simulations; `c` = expansions per regret update phase
+- Total GT-CFR iterations = s/⌈c⌉
+- c < 1 means multiple CFR+ updates between expansions (e.g. c=0.1 → 10 updates per expansion)
+- c > 1 means multiple expansions per CFR+ update (perfect-info regime)
+- Fractional c explained: "0.1 indicates a new node every 10 regret update phases"
+
+**GT-CFR uses CFR+ internally** — p14–p15, same section (line ~626):
+- "The regret update phase runs ⌈1/c⌉ updates (iterations) of public tree CFR on Lt using simultaneous updates, **regret-matching+**, and **linearly-weighted policy averaging**" — these two features *are* CFR+.
+
+**c=1 not always optimal** — p12 bottom (line ~533):
+- "Intuitively, we would expect c = 1 to be best choice... we did notice that c = 1 is not always the best choice in practice"
+
+**Poker uses c=0.01** — p13 top, results section (line ~540):
+- SOG(10, 0.01) → 10 total expansions, 100 CFR+ updates per expansion
+
+**CVPN value head is a vector, not scalar** — p14 middle (line ~603):
+- Returns one CFV per information state per player, not a single scalar like AlphaZero
+
+**Expansion adds top-k children** — p15 bottom (line ~657):
+- k=1 for perfect info (only need one good action), k=∞ for imperfect info (need to mix)
+
+**No warm-starting between searches** — p38 bottom, supplementary (line ~1415):
+- "unlike AlphaZero, SOG currently starts its search procedure from scratch"
+
+---
+
+*When future reading of this paper reveals additional important locations, update this rule with the new findings in the "Specific Findings" section above.*

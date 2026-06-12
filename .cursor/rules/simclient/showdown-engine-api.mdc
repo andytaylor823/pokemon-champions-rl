@@ -1,0 +1,42 @@
+---
+description: Verified pokemon-showdown sync-API facts for driving battles in SimClient (clone, reseed, introspect)
+globs: sim/src/**/*.ts,src/sim_client.py
+alwaysApply: false
+---
+
+# pokemon-showdown engine API (verified)
+
+Installed package is `pokemon-showdown` (full Smogon repo), **not** `@pkmn/sim` (same engine).
+Format id: `gen9championsvgc2026regma`. Stat points: 66 total, 32/stat (validated in `packTeam`).
+
+## Imports
+```ts
+const { Battle, PRNG } = require("pokemon-showdown");
+const { State } = require("pokemon-showdown/dist/sim/state"); // NOT re-exported from the package root
+```
+
+## Drive a battle (sync)
+```ts
+const b = new Battle({ formatid, seed, strictChoices: true });
+b.setPlayer("p1", { name: "p1", team: packTeam(setsA) });
+b.setPlayer("p2", { name: "p2", team: packTeam(setsB) });
+b.choose("p1", "move 1 1, move 2 -1"); // commits once every acting side has chosen
+b.makeChoices();                        // no args = auto-choose; choose("default"/"auto") also auto-picks
+```
+
+## Clone + reseed (forking for search)
+```ts
+const child = State.deserializeBattle(State.serializeBattle(b)); // deep copy, incl. PRNG seed
+child.resetRNG(seed);                                            // MUST reseed or chance repeats
+```
+
+## Read state (introspect live objects — no protocol-log parsing)
+- Phase: `battle.requestState` → `""` (if `battle.ended` → terminal) | `move` | `teampreview` | `switch` (forceSwitch).
+- Who acts: sides with `side.activeRequest && !side.activeRequest.wait`.
+- Legal options: `side.activeRequest` (raw request: move slots, targets, switches, canMega).
+- Terminal: `battle.ended`; winner: `battle.winner` (side name; `""` = tie).
+- Per-mon: `side.pokemon[j]` → `.species.id`, `.hp`/`.maxhp`, `.status`, `.ability`, `.item`,
+  `.moveSlots`, `.storedStats`, `.boosts`, `.isActive`, `.fainted`, `.volatiles`.
+
+## Output hygiene
+Worker stdout = clean JSON responses only. All diagnostics go to **stderr**.

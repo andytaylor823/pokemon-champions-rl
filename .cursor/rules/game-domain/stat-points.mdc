@@ -1,0 +1,46 @@
+---
+description: Champions uses Stat Points (not EVs) — different limits, different formula, easy to confuse
+globs: sim/**/*.ts
+alwaysApply: false
+---
+
+# Stat Points vs EVs — Critical Difference
+
+Pokemon Champions replaces EVs with **Stat Points**. The Showdown `evs` field is reused to carry stat points, but the limits and formula are completely different. Using mainline EV values (e.g. 252) silently produces absurdly inflated stats because **the battle engine does not validate — only `TeamValidator` does**.
+
+## Limits
+
+| System       | Per-stat max | Total budget |
+|--------------|-------------|-------------|
+| Mainline EVs | 252         | 510         |
+| Stat Points  | **32**      | **66**      |
+
+## Formula (Champions mod, level 50)
+
+```
+HP:    base + statPoints + 75
+Other: (base + statPoints + 20) × nature
+```
+
+Mainline divides EVs by 4 in the formula (`floor(ev/4)`), so 252 EVs → 63 extra points. Champions plugs stat points in **directly** — 252 stat points → 252 extra points, which is catastrophically wrong.
+
+## Using `packTeam`
+
+Always use the `statPoints` field (not `evs`). `packTeam` validates at build time:
+
+```typescript
+packTeam([{
+  species: "Charizard",
+  item: "Charizardite Y",
+  ability: "Blaze",
+  moves: ["Heat Wave", "Protect", "Air Slash", "Solar Beam"],
+  nature: "Timid",
+  statPoints: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 }, // total = 66
+}]);
+```
+
+## Common competitive spreads (all sum to 66)
+
+- **Max offense**: `{ spa: 32, spe: 32, hp: 2 }` or `{ atk: 32, spe: 32, hp: 2 }`
+- **Bulky support**: `{ hp: 32, def: 32, spd: 2 }` or `{ hp: 32, spd: 32, def: 2 }`
+- **Balanced**: `{ hp: 20, def: 12, spa: 20, spe: 14 }` (flexible)

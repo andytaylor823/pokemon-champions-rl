@@ -1,0 +1,60 @@
+# Testing Strategy Overview
+
+This repo uses a two-language test setup matching the two-language codebase.
+
+## Test Runners
+
+- **TypeScript (sim module):** [Vitest](https://vitest.dev/) — config in `sim/vitest.config.ts`
+- **Python (everything else):** [pytest](https://docs.pytest.org/) — config in `pyproject.toml` under `[tool.pytest.ini_options]`
+
+## Directory Layout
+
+```
+sim/tests/                         # TypeScript tests (Vitest)
+  battle-runner.test.ts            # unit: packTeam, validateStatPoints
+  sim-worker.test.ts               # unit: dispatch, handle lifecycle, view structure
+  integration/
+    battle.test.ts                 # integration: clone determinism, reseed variance
+    e2e-battle.test.ts             # E2E: team matchup outcome, replay generation
+
+tests/                             # Python tests (pytest)
+  conftest.py                      # shared fixtures (sim_client session fixture)
+  unit/                            # fast, no subprocesses
+  integration/                     # multi-component (e.g. SimClient ↔ Node worker)
+    test_sim_client.py
+  e2e/                             # full system tests
+```
+
+## Three Test Layers
+
+1. **Unit tests** (`tests/unit/`, `sim/tests/`) — isolated, fast, no subprocesses. Import modules directly.
+2. **Integration tests** (`tests/integration/`, `sim/tests/integration/`) — multi-component tests that exercise real engine behavior (e.g. clone determinism, SimClient ↔ worker IPC).
+3. **E2E tests** (`tests/e2e/`, `sim/tests/integration/e2e-battle.test.ts`) — full battle simulations with scripted strategies and outcome assertions.
+
+All three layers run by default — no markers needed to include them.
+
+## How to Run
+
+```bash
+# TypeScript — all tests (from sim/ directory)
+cd sim && npm test
+
+# TypeScript — watch mode
+cd sim && npm run test:watch
+
+# Python — all tests (unit + integration + e2e)
+pytest
+
+# Python — skip slow tests
+pytest -m 'not slow'
+```
+
+## Markers (Python)
+
+- `@pytest.mark.slow` — long-running tests. Skip with `pytest -m 'not slow'`.
+
+## CI
+
+GitHub Actions workflow at `.github/workflows/test.yml` runs on push/PR to main:
+- **ts-tests job:** `npm ci` in `sim/`, then `npm test`
+- **py-tests job:** `pip install -e ".[dev]"`, `npm ci` in `sim/`, then `pytest`

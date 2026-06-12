@@ -1,0 +1,25 @@
+---
+description: SimClient non-negotiable invariants — boundary, sync API, immutability, mandatory seeds, lifetime
+globs: sim/src/**/*.ts,src/sim_client.py
+alwaysApply: false
+---
+
+# SimClient contract (do not break)
+
+- **Showdown is the source of truth.** Never reimplement battle rules in Python. All
+  mechanics happen in the Node worker via the engine.
+- **Engine-native boundary.** Only structured snapshots + Showdown choice strings
+  (e.g. `"move 1 1, move 2 -1"`) cross the wire — no tensors, no numbered actions.
+  Tensorization and the action-index↔choice-string mapping live in Python encoder/action
+  modules, never in the worker.
+- **Sync engine API only.** `new Battle` + `setPlayer` + `choose`/`makeChoices` +
+  `State.serialize/deserialize`. Do NOT use the async `BattleStream` for search.
+- **Immutable step.** `step` clones the parent and returns a NEW child handle; the parent
+  stays steppable with other choices/seeds. Never mutate a handle in place.
+- **Seed is mandatory.** Cloning copies the PRNG state, so a clone re-rolls the *same*
+  outcome unless reseeded. `step` must `resetRNG(seed)` before resolving. The search picks
+  a fresh seed per chance sample; the worker owns **no** bucketing strategy.
+- **Scratchpad lifetime.** Every search clone belongs to a `session`; `close_search` frees
+  them all at once. The live battle (session = null) is never freed by a search.
+- **strictChoices: true.** Illegal choices error loudly — trust the action mask; never
+  silently auto-correct. (Explicit `"default"`/`"auto"` auto-pick is the one exception.)

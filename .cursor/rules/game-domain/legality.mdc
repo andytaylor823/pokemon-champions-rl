@@ -1,0 +1,58 @@
+---
+description: How to validate Pokemon team legality for Champions Reg M-A without reading the full data/legal/* files
+alwaysApply: true
+---
+
+# Legality Validation
+
+When building or modifying Pokemon teams, **do not read** `data/legal/pokemon.txt`, `items.txt`, or `learnsets.json` to check legality -- this will cost a lot of tokens. Instead, use the CLI helper:
+
+## Quick single-Pokemon check
+
+```bash
+python scripts/check_team_legality.py \
+  --pokemon "Charizard" --item "Charizardite Y" \
+  --moves "Heat Wave,Protect,Air Slash,Solar Beam"
+```
+
+## Full team check (Showdown paste via stdin)
+
+```bash
+echo 'Charizard @ Charizardite Y
+- Heat Wave
+- Protect
+- Air Slash
+- Solar Beam
+
+Venusaur @ Lum Berry
+- Protect
+- Sleep Powder
+- Giga Drain
+- Sludge Bomb' | python scripts/check_team_legality.py
+```
+
+## Full team check (from file)
+
+```bash
+python scripts/check_team_legality.py --file team.txt
+```
+
+## What it validates
+
+- Species against `data/legal/pokemon.txt` (~195 legal species)
+- Items against `data/legal/items.txt` (~120 legal items, mostly Mega Stones + berries + type boosters)
+- Moves against `data/legal/learnsets.json` (per-species learnsets; `moves.txt` is **ignored**)
+- Species clause (no duplicate species) and item clause (no duplicate items)
+
+## Exit codes
+
+- `0` — all checks passed
+- `1` — at least one violation found
+- `2` — bad input / no Pokemon found
+
+## Key legal-pool facts (to avoid common mistakes)
+
+- **No Life Orb, Assault Vest, Damp Rock, Choice Band, Choice Specs** — the item pool is restricted
+- **Choice Scarf** is legal; most other Choice items are not
+- Always use `learnsets.json` as the move source of truth
+- Mega Stones have Champions-specific names (e.g. `Meganiumite`, `Chimechite`, `Dragoninite`)

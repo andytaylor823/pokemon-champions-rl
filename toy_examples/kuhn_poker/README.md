@@ -76,7 +76,7 @@ The Nash equilibrium has exploitability 0 and game value −1/18 for Player 1.
 
 ## Relationship to the Pokemon VGC Agent
 
-This toy example validates the same algorithmic machinery that will power the full Pokemon agent (see `docs/gt-cfr-theory.md`):
+This toy example validates the same algorithmic machinery that will power the full Pokemon agent (see `docs/architecture/gt-cfr-theory.md`):
 
 - **CVPN architecture** → scales to a Transformer for Pokemon state encoding
 - **Ephemeral search tree + CFR+** → same algorithm, larger action space

@@ -129,4 +129,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["src", "scripts", "toy_examples"]
+known-first-party = ["meta_priors", "sim_client", "scripts", "toy_examples"]

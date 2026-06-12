@@ -2,7 +2,7 @@
 
 Owns a persistent Node `sim-worker.ts` subprocess and talks to it over
 line-delimited JSON on stdin/stdout. Heavy `Battle` objects live in Node; here
-we hold opaque integer handles. See docs/repo-architecture.md §3.1 and the
+we hold opaque integer handles. See docs/architecture/repo-architecture.md §3.1 and the
 SimClient plan.
 
 Decisions realised:
@@ -58,7 +58,8 @@ class SimClient:
             raise SimError(f"worker exited (code {self._proc.returncode})")
         self._id += 1
         msg = {"id": self._id, "cmd": cmd, **args}
-        assert self._proc.stdin is not None and self._proc.stdout is not None
+        if self._proc.stdin is None or self._proc.stdout is None:
+            raise SimError("worker stdin/stdout pipes are not available")
         self._proc.stdin.write(json.dumps(msg) + "\n")
         self._proc.stdin.flush()
         line = self._proc.stdout.readline()

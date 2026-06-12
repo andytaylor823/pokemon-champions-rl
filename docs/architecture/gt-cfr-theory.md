@@ -16,8 +16,8 @@ This is the distilled, organized version of an extended theory discussion. It is
 - `.cursor/rules/game-domain/overview.mdc` — Regulation M-A rules, stat system, Mega mechanics, doubles mechanics.
 - `.cursor/rules/game-domain/legality.mdc` — how to validate teams (CLI helper) without burning tokens.
 - `research/notes.md` — algorithm survey (PPO / AlphaZero / R-NaD), simulation-engine choices (`@pkmn/sim`, poke-env), data sources for priors. **The engineering counterpart to this doc.**
-- `docs/state-encoding.md` — how the battle state is tokenized and consumed by the neural network. Covers entity tokens, field tokens, the Transformer architecture, belief-weighted candidate tokens, Phase 1 vs Phase 4 value-head designs, and alternatives considered. **The encoding/NN architecture counterpart to this doc.**
-- `docs/search-nn-interface.md` — when the NN is called during search, caching, deal sampling, the composite-private-state problem, the three-tier computation split (backbone/policy/value), and chance-node bucketing. **The runtime interface counterpart to this doc.**
+- `docs/architecture/state-encoding.md` — how the battle state is tokenized and consumed by the neural network. Covers entity tokens, field tokens, the Transformer architecture, belief-weighted candidate tokens, Phase 1 vs Phase 4 value-head designs, and alternatives considered. **The encoding/NN architecture counterpart to this doc.**
+- `docs/architecture/search-nn-interface.md` — when the NN is called during search, caching, deal sampling, the composite-private-state problem, the three-tier computation split (backbone/policy/value), and chance-node bucketing. **The runtime interface counterpart to this doc.**
 - `docs/article_summary*.md` — the long-form conversational Q&A derivations that this document distills. Go there for the verbose back-and-forth and additional examples.
 
 **Notation conventions:** display math in `$$ … $$`, inline math in `$ … $`. Player $i$; opponent $-i$. Strategies $\sigma$; the search/CFR iteration counter is $t$ (do **not** confuse it with the in-game turn number).

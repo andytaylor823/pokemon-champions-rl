@@ -4,7 +4,7 @@
  * A long-lived process that owns the Pokémon Showdown battle engine and speaks
  * line-delimited JSON over stdin/stdout (one request per line, one response per
  * line). Python holds opaque integer HANDLES; the heavy Battle objects live
- * here. See docs/repo-architecture.md §3.1 and the SimClient plan.
+ * here. See docs/architecture/repo-architecture.md §3.1 and the SimClient plan.
  *
  * Design decisions realised here:
  *   - SYNC engine API (new Battle + setPlayer + choose), not BattleStream.
@@ -247,7 +247,7 @@ function dispatch(msg: any): any {
       return { handles: battles.size, sessions: sessions.size };
     case "close":
       process.stderr.write("[sim-worker] closing\n");
-      process.exit(0);
+      return { shutdown: true };
     default:
       throw new Error(`unknown cmd: ${msg.cmd}`);
   }
@@ -269,6 +269,7 @@ function main(): void {
     try {
       const result = dispatch(msg);
       process.stdout.write(JSON.stringify({ id: msg.id ?? null, ok: true, ...result }) + "\n");
+      if (result.shutdown) process.exit(0);
     } catch (e: any) {
       process.stdout.write(JSON.stringify({ id: msg.id ?? null, ok: false, error: e?.message ?? String(e) }) + "\n");
     }

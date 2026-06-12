@@ -5,9 +5,9 @@
 **Scope:** The **Pokémon production system only**. This is a *module map* (responsibilities, interfaces, and where one implementation can be swapped for another), **not** a directory layout and **not** an implementation spec.
 
 **Companion docs (read for their domains; not duplicated here):**
-- `docs/gt-cfr-theory.md` — the algorithm (CFR, GT-CFR, the two-loop model, training targets). The ground truth; trusted deeply.
-- `docs/state-encoding.md` — token anatomy, Transformer, belief-weighted candidates, value-head designs.
-- `docs/search-nn-interface.md` — when the NN is called in search, caching, deal sampling, the three-tier split, chance bucketing.
+- `docs/architecture/gt-cfr-theory.md` — the algorithm (CFR, GT-CFR, the two-loop model, training targets). The ground truth; trusted deeply.
+- `docs/architecture/state-encoding.md` — token anatomy, Transformer, belief-weighted candidates, value-head designs.
+- `docs/architecture/search-nn-interface.md` — when the NN is called in search, caching, deal sampling, the three-tier split, chance bucketing.
 - `.cursor/rules/agent/overview.mdc` — milestones, action space, imperfect-info inventory.
 
 > **A note on trust.** `gt-cfr-theory.md` was produced with Opus 4.8 and is trusted deeply. `state-encoding.md` and `search-nn-interface.md` were produced with Opus 4.6 — trusted *directionally*, but their specific numbers (token counts, `d_model`, K, ms estimates, sample counts) are tentative defaults to tune, not commitments. Numbers in this doc inherit that caveat and are marked accordingly.

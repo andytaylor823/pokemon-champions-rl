@@ -59,25 +59,28 @@ class TestSearchSession:
 
         # Open a search session cloned from the live battle
         session, root, view = sim_client.open_search(from_handle=live)
-        assert isinstance(session, int)
-        assert isinstance(root, int)
-        assert view["phase"] == "teamPreview"
+        try:
+            assert isinstance(session, int)
+            assert isinstance(root, int)
+            assert view["phase"] == "teamPreview"
 
-        # Play the game to terminal using "default" auto-choices
-        cur, steps = root, 0
-        while not view["terminal"] and steps < 200:
-            choices = {side: "default" for side in view["to_move"]}
-            res = sim_client.step(cur, choices, seed=_rng_seed(rng))
-            cur, view = res["child"], res["view"]
-            steps += 1
+            # Play the game to terminal using "default" auto-choices
+            cur, steps = root, 0
+            while not view["terminal"] and steps < 200:
+                choices = {side: "default" for side in view["to_move"]}
+                res = sim_client.step(cur, choices, seed=_rng_seed(rng))
+                cur, view = res["child"], res["view"]
+                steps += 1
 
-        # Verify the game terminated properly
-        assert view["terminal"], f"Game did not terminate after {steps} steps"
-        assert view["utility"] in (
-            {"p1": 1, "p2": -1},
-            {"p1": -1, "p2": 1},
-            {"p1": 0, "p2": 0},
-        )
+            # Verify the game terminated properly
+            assert view["terminal"], f"Game did not terminate after {steps} steps"
+            assert view["utility"] in (
+                {"p1": 1, "p2": -1},
+                {"p1": -1, "p2": 1},
+                {"p1": 0, "p2": 0},
+            )
+        finally:
+            sim_client.close_search(session)
 
     def test_close_search_frees_handles(self, sim_client: SimClient, team_a: list, team_b: list):
         """close_search frees all clones; the live battle survives."""

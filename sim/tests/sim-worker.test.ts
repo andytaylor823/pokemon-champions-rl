@@ -3,55 +3,12 @@
  * (no subprocess) thanks to the `require.main === module` guard.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import {
-  dispatch,
-  resetState,
-  battles,
-  sessions,
-} from "../src/sim-worker";
+import { dispatch, resetState } from "../src/sim-worker";
+import { TEAM_A, TEAM_B } from "./fixtures/teams";
 
-// Reusable Champions-format teams (structured PokemonSet objects)
-const TEAM_A = [
-  { species: "Charizard", item: "Charizardite Y", ability: "Blaze",
-    moves: ["Heat Wave", "Protect", "Air Slash", "Solar Beam"],
-    nature: "Timid", statPoints: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 } },
-  { species: "Venusaur", item: "Lum Berry", ability: "Chlorophyll",
-    moves: ["Protect", "Sleep Powder", "Giga Drain", "Sludge Bomb"],
-    nature: "Modest", statPoints: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 } },
-  { species: "Garchomp", item: "Choice Scarf", ability: "Rough Skin",
-    moves: ["Earthquake", "Dragon Claw", "Rock Slide", "Protect"],
-    nature: "Jolly", statPoints: { hp: 2, atk: 32, def: 0, spa: 0, spd: 0, spe: 32 } },
-  { species: "Whimsicott", item: "Mental Herb", ability: "Prankster",
-    moves: ["Tailwind", "Helping Hand", "Encore", "Protect"],
-    nature: "Timid", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 0, spe: 32 } },
-  { species: "Pelipper", item: "Wacan Berry", ability: "Drizzle",
-    moves: ["Hydro Pump", "Hurricane", "Tailwind", "Protect"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Incineroar", item: "Sitrus Berry", ability: "Intimidate",
-    moves: ["Flare Blitz", "Darkest Lariat", "Fake Out", "Parting Shot"],
-    nature: "Adamant", statPoints: { hp: 32, atk: 32, def: 0, spa: 0, spd: 2, spe: 0 } },
-];
-
-const TEAM_B = [
-  { species: "Corviknight", item: "Leftovers", ability: "Pressure",
-    moves: ["Brave Bird", "Tailwind", "Iron Defense", "Roost"],
-    nature: "Careful", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 32, spe: 0 } },
-  { species: "Meganium", item: "Meganiumite", ability: "Overgrow",
-    moves: ["Body Press", "Light Screen", "Reflect", "Synthesis"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Sinistcha", item: "Focus Sash", ability: "Hospitality",
-    moves: ["Matcha Gotcha", "Rage Powder", "Trick Room", "Life Dew"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Kingambit", item: "Chople Berry", ability: "Defiant",
-    moves: ["Kowtow Cleave", "Swords Dance", "Iron Defense", "Sucker Punch"],
-    nature: "Adamant", statPoints: { hp: 32, atk: 32, def: 2, spa: 0, spd: 0, spe: 0 } },
-  { species: "Meowstic", item: "Kasib Berry", ability: "Prankster",
-    moves: ["Psychic", "Light Screen", "Reflect", "Helping Hand"],
-    nature: "Timid", statPoints: { hp: 32, atk: 0, def: 0, spa: 2, spd: 0, spe: 32 } },
-  { species: "Talonflame", item: "Sharp Beak", ability: "Gale Wings",
-    moves: ["Brave Bird", "Roost", "Feather Dance", "Bulk Up"],
-    nature: "Jolly", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 0, spe: 32 } },
-];
+/** Live handle / session counts, read through the public `stats` command. */
+const handleCount = () => dispatch({ cmd: "stats" }).handles;
+const sessionCount = () => dispatch({ cmd: "stats" }).sessions;
 
 describe("sim-worker dispatch (unit)", () => {
   // Reset global handle/session state between each test
@@ -100,9 +57,9 @@ describe("sim-worker dispatch (unit)", () => {
 
     it("release removes a handle from the registry", () => {
       const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
-      expect(battles.size).toBe(1);
+      expect(handleCount()).toBe(1);
       dispatch({ cmd: "release", handle: battle.handle });
-      expect(battles.size).toBe(0);
+      expect(handleCount()).toBe(0);
     });
 
     it("throws when viewing a released handle", () => {
@@ -141,12 +98,12 @@ describe("sim-worker dispatch (unit)", () => {
       });
 
       // 3 handles: live battle + root clone + step child
-      expect(battles.size).toBe(3);
+      expect(handleCount()).toBe(3);
       const closeResult = dispatch({ cmd: "close_search", session: search.session });
       expect(closeResult.freed).toBe(2); // root + child
 
       // Only the live battle remains
-      expect(battles.size).toBe(1);
+      expect(handleCount()).toBe(1);
       expect(() => dispatch({ cmd: "view", handle: battle.handle })).not.toThrow();
     });
 
@@ -155,7 +112,7 @@ describe("sim-worker dispatch (unit)", () => {
       expect(search.session).toBeDefined();
       expect(search.root).toBeNull();
       expect(search.root_view).toBeNull();
-      expect(sessions.size).toBe(1);
+      expect(sessionCount()).toBe(1);
     });
   });
 
@@ -220,49 +177,28 @@ describe("sim-worker dispatch (unit)", () => {
   });
 
   describe("state view structure", () => {
-    it("view contains all expected fields", () => {
+    // The StateView/snapshot SHAPE is enforced by the types in src/types.ts;
+    // here we assert the VALUES the worker fills in from a fresh battle.
+    it("view snapshots both sides at full strength before team preview", () => {
       const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
       const v = dispatch({ cmd: "view", handle: battle.handle }).view;
 
-      // Top-level StateView fields
-      expect(v).toHaveProperty("phase");
-      expect(v).toHaveProperty("to_move");
-      expect(v).toHaveProperty("legal");
-      expect(v).toHaveProperty("snapshot");
-      expect(v).toHaveProperty("terminal");
-      expect(v).toHaveProperty("utility");
+      expect(v.snapshot.turn).toBe(0);
+      expect(v.snapshot.field.weather).toBeNull();
+      expect(v.snapshot.sides.map((s: any) => s.id)).toEqual(["p1", "p2"]);
 
-      // Snapshot structure
-      expect(v.snapshot).toHaveProperty("turn");
-      expect(v.snapshot).toHaveProperty("field");
-      expect(v.snapshot).toHaveProperty("sides");
-      expect(v.snapshot.sides).toHaveLength(2);
-
-      // Field structure
-      expect(v.snapshot.field).toHaveProperty("weather");
-      expect(v.snapshot.field).toHaveProperty("terrain");
-      expect(v.snapshot.field).toHaveProperty("pseudoWeather");
-
-      // Side structure
       const side = v.snapshot.sides[0];
-      expect(side).toHaveProperty("id");
-      expect(side).toHaveProperty("sideConditions");
-      expect(side).toHaveProperty("pokemon");
-      expect(side.pokemon.length).toBeGreaterThan(0);
+      expect(side.id).toBe("p1");
+      expect(side.pokemon).toHaveLength(TEAM_A.length);
 
-      // Pokemon structure
+      // First mon is Charizard (team order is preserved at team preview).
       const mon = side.pokemon[0];
-      expect(mon).toHaveProperty("species");
-      expect(mon).toHaveProperty("hp");
-      expect(mon).toHaveProperty("maxhp");
-      expect(mon).toHaveProperty("fainted");
-      expect(mon).toHaveProperty("status");
-      expect(mon).toHaveProperty("ability");
-      expect(mon).toHaveProperty("item");
-      expect(mon).toHaveProperty("stats");
-      expect(mon).toHaveProperty("boosts");
-      expect(mon).toHaveProperty("moves");
-      expect(mon).toHaveProperty("volatiles");
+      expect(mon.species).toBe("charizard");
+      expect(mon.fainted).toBe(false);
+      expect(mon.hp).toBe(mon.maxhp);
+      expect(mon.hp).toBeGreaterThan(0);
+      expect(mon.moves).toHaveLength(4);
+      expect(mon.moves[0]).toMatchObject({ id: expect.any(String), pp: expect.any(Number) });
     });
 
     it("non-terminal battle has null utility", () => {

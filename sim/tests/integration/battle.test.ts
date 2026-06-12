@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { packTeam } from "../../src/battle-runner";
+import { TEAM_A as TEAM_A_SETS, TEAM_B as TEAM_B_SETS } from "../fixtures/teams";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Battle } = require("pokemon-showdown");
@@ -19,47 +20,8 @@ const ALT_SEED: [number, number, number, number] = [9, 8, 7, 6];
 const CLONE_AT_TURN = 3;
 const MAX_STEPS = 200;
 
-const TEAM_A = packTeam([
-  { species: "Charizard", item: "Charizardite Y", ability: "Blaze",
-    moves: ["Heat Wave", "Protect", "Air Slash", "Solar Beam"],
-    nature: "Timid", statPoints: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 } },
-  { species: "Venusaur", item: "Lum Berry", ability: "Chlorophyll",
-    moves: ["Protect", "Sleep Powder", "Giga Drain", "Sludge Bomb"],
-    nature: "Modest", statPoints: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 } },
-  { species: "Garchomp", item: "Choice Scarf", ability: "Rough Skin",
-    moves: ["Earthquake", "Dragon Claw", "Rock Slide", "Protect"],
-    nature: "Jolly", statPoints: { hp: 2, atk: 32, def: 0, spa: 0, spd: 0, spe: 32 } },
-  { species: "Whimsicott", item: "Mental Herb", ability: "Prankster",
-    moves: ["Tailwind", "Helping Hand", "Encore", "Protect"],
-    nature: "Timid", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 0, spe: 32 } },
-  { species: "Pelipper", item: "Wacan Berry", ability: "Drizzle",
-    moves: ["Hydro Pump", "Hurricane", "Tailwind", "Protect"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Incineroar", item: "Sitrus Berry", ability: "Intimidate",
-    moves: ["Flare Blitz", "Darkest Lariat", "Fake Out", "Parting Shot"],
-    nature: "Adamant", statPoints: { hp: 32, atk: 32, def: 0, spa: 0, spd: 2, spe: 0 } },
-]);
-
-const TEAM_B = packTeam([
-  { species: "Corviknight", item: "Leftovers", ability: "Pressure",
-    moves: ["Brave Bird", "Tailwind", "Iron Defense", "Roost"],
-    nature: "Careful", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 32, spe: 0 } },
-  { species: "Meganium", item: "Meganiumite", ability: "Overgrow",
-    moves: ["Body Press", "Light Screen", "Reflect", "Synthesis"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Sinistcha", item: "Focus Sash", ability: "Hospitality",
-    moves: ["Matcha Gotcha", "Rage Powder", "Trick Room", "Life Dew"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Kingambit", item: "Chople Berry", ability: "Defiant",
-    moves: ["Kowtow Cleave", "Swords Dance", "Iron Defense", "Sucker Punch"],
-    nature: "Adamant", statPoints: { hp: 32, atk: 32, def: 2, spa: 0, spd: 0, spe: 0 } },
-  { species: "Meowstic", item: "Kasib Berry", ability: "Prankster",
-    moves: ["Psychic", "Light Screen", "Reflect", "Helping Hand"],
-    nature: "Timid", statPoints: { hp: 32, atk: 0, def: 0, spa: 2, spd: 0, spe: 32 } },
-  { species: "Talonflame", item: "Sharp Beak", ability: "Gale Wings",
-    moves: ["Brave Bird", "Roost", "Feather Dance", "Bulk Up"],
-    nature: "Jolly", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 0, spe: 32 } },
-]);
+const TEAM_A = packTeam(TEAM_A_SETS);
+const TEAM_B = packTeam(TEAM_B_SETS);
 
 function makeBattle(seed: [number, number, number, number]): any {
   const battle = new Battle({ formatid: FORMAT_ID, seed });
@@ -84,6 +46,16 @@ function cloneViaJson(battle: any): any {
   return State.deserializeBattle(JSON.parse(json));
 }
 
+/**
+ * Join a battle's log for comparison, dropping Showdown's `|t:|` timer lines.
+ * Those carry the wall-clock seconds at which each turn was processed, so two
+ * continuations that straddle a one-second boundary differ on timestamps alone.
+ * We compare game events, not clocks.
+ */
+function gameLog(battle: any): string {
+  return battle.log.filter((line: string) => !line.startsWith("|t:|")).join("\n");
+}
+
 describe("clone determinism (from clone-spike.ts)", () => {
   it("a restored clone continues identically to the original", () => {
     const root = makeBattle(ROOT_SEED);
@@ -94,12 +66,12 @@ describe("clone determinism (from clone-spike.ts)", () => {
 
     // Continue the original to the end
     advance(root, null);
-    const originalLog = root.log.join("\n");
+    const originalLog = gameLog(root);
 
     // Restore from snapshot and continue — should produce the same log
     const restored = State.deserializeBattle(JSON.parse(snapshotJson));
     advance(restored, null);
-    const restoredLog = restored.log.join("\n");
+    const restoredLog = gameLog(restored);
 
     expect(restoredLog).toBe(originalLog);
   });
@@ -114,7 +86,7 @@ describe("clone determinism (from clone-spike.ts)", () => {
     const r2 = State.deserializeBattle(JSON.parse(snapshotJson));
     advance(r2, null);
 
-    expect(r1.log.join("\n")).toBe(r2.log.join("\n"));
+    expect(gameLog(r1)).toBe(gameLog(r2));
   });
 });
 
@@ -126,13 +98,13 @@ describe("reseed variance (from clone-spike.ts)", () => {
 
     // Continue original
     advance(root, null);
-    const originalLog = root.log.join("\n");
+    const originalLog = gameLog(root);
 
     // Restore and reseed with a different seed
     const reseeded = State.deserializeBattle(JSON.parse(snapshotJson));
     reseeded.resetRNG(ALT_SEED);
     advance(reseeded, null);
-    const reseededLog = reseeded.log.join("\n");
+    const reseededLog = gameLog(reseeded);
 
     expect(reseededLog).not.toBe(originalLog);
   });

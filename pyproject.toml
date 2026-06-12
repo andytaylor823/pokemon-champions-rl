@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "pokemon-vgc-agent"
 version = "0.1.0"
@@ -32,6 +36,16 @@ testpaths = ["tests"]
 markers = [
     "slow: long-running tests (skip with: pytest -m 'not slow')",
 ]
+
+# src-layout: the importable code lives under src/ (the meta_priors package and
+# the top-level sim_client module). This is what makes `pip install -e .` expose
+# them without any sys.path manipulation in the tests.
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["sim_client"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pylint.main]
 ignore = ["tests"]

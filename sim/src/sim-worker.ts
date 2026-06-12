@@ -26,12 +26,18 @@
 
 import * as readline from "node:readline";
 import { packTeam, PokemonSet } from "./battle-runner";
+import type {
+  BattleSnapshot,
+  PokemonSnapshot,
+  Side,
+  SideSnapshot,
+  StateView,
+} from "./types";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Battle } = require("pokemon-showdown");
 const { State } = require("pokemon-showdown/dist/sim/state");
 
-type Side = "p1" | "p2";
 type Seed = string | [number, number, number, number];
 
 // --- format config (hoisted above registry so resetState can reference it) --
@@ -125,7 +131,7 @@ function utilityOf(battle: any): Record<Side, number> | null {
 }
 
 /** A clean, JSON-safe omniscient snapshot built from live objects (v1). */
-function snapshotPokemon(p: any): any {
+function snapshotPokemon(p: any): PokemonSnapshot {
   return {
     species: p.species?.id ?? null,
     level: p.level,
@@ -149,7 +155,7 @@ function snapshotPokemon(p: any): any {
   };
 }
 
-function snapshotSide(side: any): any {
+function snapshotSide(side: any): SideSnapshot {
   const conds: Record<string, number | null> = {};
   for (const id of Object.keys(side.sideConditions ?? {})) {
     conds[id] = side.sideConditions[id]?.duration ?? null;
@@ -161,7 +167,7 @@ function snapshotSide(side: any): any {
   };
 }
 
-function snapshotBattle(battle: any): any {
+function snapshotBattle(battle: any): BattleSnapshot {
   const field = battle.field;
   return {
     turn: battle.turn,
@@ -174,7 +180,7 @@ function snapshotBattle(battle: any): any {
   };
 }
 
-function view(battle: any): any {
+function view(battle: any): StateView {
   const legal: Record<string, any> = {};
   for (const s of battle.sides) if (s.activeRequest) legal[s.id] = s.activeRequest;
   return {
@@ -213,6 +219,11 @@ function dispatch(msg: any): any {
       const logStart = child.log.length;
       applyChoices(child, msg.choices ?? {});
       const outcome = child.log.slice(logStart);
+      // Child inherits the parent's session. Stepping a search clone keeps the
+      // child inside that session (freed en masse by close_search). Stepping the
+      // live battle (session = null) is the intended way to advance the real
+      // game: the child is a new live-line handle, NOT swept by any search —
+      // the caller advances by reassigning to it and `release`s the old handle.
       const session = handleSession.get(msg.handle) ?? null;
       const childHandle = alloc(child, session);
       return { child: childHandle, view: view(child), outcome };
@@ -224,11 +235,13 @@ function dispatch(msg: any): any {
       return { released: msg.handle };
     case "close_search": {
       const set = sessions.get(msg.session);
+      const freed = set ? set.size : 0;
       if (set) {
-        for (const h of set) { battles.delete(h); handleSession.delete(h); }
+        // Iterate a copy: freeHandle deletes from `set` as it cleans each handle.
+        for (const h of [...set]) freeHandle(h);
         sessions.delete(msg.session);
       }
-      return { closed: msg.session, freed: set ? set.size : 0 };
+      return { closed: msg.session, freed };
     }
     case "stats":
       return { handles: battles.size, sessions: sessions.size };
@@ -270,21 +283,8 @@ if (require.main === module) {
   main();
 }
 
-export {
-  dispatch,
-  resetState,
-  view,
-  alloc,
-  freeHandle,
-  getBattle,
-  cloneBattle,
-  newBattle,
-  applyChoices,
-  actingSides,
-  phaseOf,
-  utilityOf,
-  snapshotBattle,
-  battles,
-  handleSession,
-  sessions,
-};
+// Public test surface: drive everything through `dispatch` (the same entry the
+// stdio loop uses), and `resetState` to isolate cases. Internals — the handle
+// registries and engine helpers — stay private; inspect state via the `stats`
+// and `view` commands.
+export { dispatch, resetState };

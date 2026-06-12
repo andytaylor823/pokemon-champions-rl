@@ -12,13 +12,11 @@ Decisions realised:
   - mandatory seed: step re-seeds the clone (search samples chance via seeds)
   - scratchpad lifetime: open_search()/close_search() bracket a decision
 
-Run the built-in integration self-test:
-    python src/sim_client.py
+Integration tests live in tests/integration/test_sim_client.py.
 """
 from __future__ import annotations
 
 import json
-import random
 import subprocess
 from pathlib import Path
 from typing import Any, Optional
@@ -28,7 +26,7 @@ SIM_DIR = REPO_ROOT / "sim"
 DEFAULT_FORMAT = "gen9championsvgc2026regma"
 
 Side = str  # "p1" | "p2"
-Seed = list  # [int, int, int, int]
+Seed = list[int]  # [int, int, int, int]
 
 
 class SimError(RuntimeError):
@@ -115,93 +113,3 @@ class SimClient:
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
-
-
-# ---------------------------------------------------------------------------
-# Integration self-test: drive a full Champions doubles game to terminal,
-# re-seeding every step, then verify scratchpad cleanup frees every clone.
-# Uses "default" (auto-pick) choices — legal-move/targeting generation is the
-# separate Python action module's job, not SimClient's.
-# ---------------------------------------------------------------------------
-TEAM_A = [
-    {"species": "Charizard", "item": "Charizardite Y", "ability": "Blaze",
-     "moves": ["Heat Wave", "Protect", "Air Slash", "Solar Beam"],
-     "nature": "Timid", "statPoints": {"hp": 2, "atk": 0, "def": 0, "spa": 32, "spd": 0, "spe": 32}},
-    {"species": "Venusaur", "item": "Lum Berry", "ability": "Chlorophyll",
-     "moves": ["Protect", "Sleep Powder", "Giga Drain", "Sludge Bomb"],
-     "nature": "Modest", "statPoints": {"hp": 2, "atk": 0, "def": 0, "spa": 32, "spd": 0, "spe": 32}},
-    {"species": "Garchomp", "item": "Choice Scarf", "ability": "Rough Skin",
-     "moves": ["Earthquake", "Dragon Claw", "Rock Slide", "Protect"],
-     "nature": "Jolly", "statPoints": {"hp": 2, "atk": 32, "def": 0, "spa": 0, "spd": 0, "spe": 32}},
-    {"species": "Whimsicott", "item": "Mental Herb", "ability": "Prankster",
-     "moves": ["Tailwind", "Helping Hand", "Encore", "Protect"],
-     "nature": "Timid", "statPoints": {"hp": 32, "atk": 0, "def": 2, "spa": 0, "spd": 0, "spe": 32}},
-    {"species": "Pelipper", "item": "Wacan Berry", "ability": "Drizzle",
-     "moves": ["Hydro Pump", "Hurricane", "Tailwind", "Protect"],
-     "nature": "Bold", "statPoints": {"hp": 32, "atk": 0, "def": 32, "spa": 0, "spd": 2, "spe": 0}},
-    {"species": "Incineroar", "item": "Sitrus Berry", "ability": "Intimidate",
-     "moves": ["Flare Blitz", "Darkest Lariat", "Fake Out", "Parting Shot"],
-     "nature": "Adamant", "statPoints": {"hp": 32, "atk": 32, "def": 0, "spa": 0, "spd": 2, "spe": 0}},
-]
-TEAM_B = [
-    {"species": "Corviknight", "item": "Leftovers", "ability": "Pressure",
-     "moves": ["Brave Bird", "Tailwind", "Iron Defense", "Roost"],
-     "nature": "Careful", "statPoints": {"hp": 32, "atk": 0, "def": 2, "spa": 0, "spd": 32, "spe": 0}},
-    {"species": "Meganium", "item": "Meganiumite", "ability": "Overgrow",
-     "moves": ["Body Press", "Light Screen", "Reflect", "Synthesis"],
-     "nature": "Bold", "statPoints": {"hp": 32, "atk": 0, "def": 32, "spa": 0, "spd": 2, "spe": 0}},
-    {"species": "Sinistcha", "item": "Focus Sash", "ability": "Hospitality",
-     "moves": ["Matcha Gotcha", "Rage Powder", "Trick Room", "Life Dew"],
-     "nature": "Bold", "statPoints": {"hp": 32, "atk": 0, "def": 32, "spa": 0, "spd": 2, "spe": 0}},
-    {"species": "Kingambit", "item": "Chople Berry", "ability": "Defiant",
-     "moves": ["Kowtow Cleave", "Swords Dance", "Iron Defense", "Sucker Punch"],
-     "nature": "Adamant", "statPoints": {"hp": 32, "atk": 32, "def": 2, "spa": 0, "spd": 0, "spe": 0}},
-    {"species": "Meowstic", "item": "Kasib Berry", "ability": "Prankster",
-     "moves": ["Psychic", "Light Screen", "Reflect", "Helping Hand"],
-     "nature": "Timid", "statPoints": {"hp": 32, "atk": 0, "def": 0, "spa": 2, "spd": 0, "spe": 32}},
-    {"species": "Talonflame", "item": "Sharp Beak", "ability": "Gale Wings",
-     "moves": ["Brave Bird", "Roost", "Feather Dance", "Bulk Up"],
-     "nature": "Jolly", "statPoints": {"hp": 32, "atk": 0, "def": 2, "spa": 0, "spd": 0, "spe": 32}},
-]
-
-
-def _rng_seed(rng: random.Random) -> Seed:
-    return [rng.randint(0, 0xFFFF) for _ in range(4)]
-
-
-def _self_test() -> None:
-    rng = random.Random(0)
-    print("=== SimClient integration self-test ===")
-    with SimClient(inherit_stderr=True) as sc:
-        live, _ = sc.new_battle(TEAM_A, TEAM_B, seed=[1, 2, 3, 4])
-        print(f"[new_battle] live handle={live}")
-
-        session, root, view = sc.open_search(from_handle=live)
-        print(f"[open_search] session={session} root={root} phase={view['phase']}")
-
-        cur, steps = root, 0
-        while not view["terminal"] and steps < 200:
-            choices = {side: "default" for side in view["to_move"]}
-            res = sc.step(cur, choices, seed=_rng_seed(rng))
-            cur, view = res["child"], res["view"]
-            steps += 1
-        print(f"[play] reached phase={view['phase']} after {steps} steps; "
-              f"turn={view['snapshot']['turn']} utility={view['utility']}")
-
-        assert view["terminal"], "game did not terminate"
-        assert view["utility"] in ({"p1": 1, "p2": -1}, {"p1": -1, "p2": 1}, {"p1": 0, "p2": 0})
-
-        before = sc.stats()["handles"]
-        freed = sc.close_search(session)
-        after = sc.stats()["handles"]
-        print(f"[cleanup] handles {before} -> {after} (freed {freed}); live battle survives")
-        assert after == 1, f"expected only the live battle to remain, got {after}"
-
-        # The live battle is untouched by the search and still steppable.
-        live_view = sc.view(live)
-        assert not live_view["terminal"] and live_view["phase"] == "teamPreview"
-    print("SELF-TEST PASSED")
-
-
-if __name__ == "__main__":
-    _self_test()

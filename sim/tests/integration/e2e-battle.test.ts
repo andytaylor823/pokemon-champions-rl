@@ -12,50 +12,12 @@ import * as os from "node:os";
 import { BattleRunner, packTeam } from "../../src/battle-runner";
 import { saveReplay } from "../../src/replay-export";
 import type { Strategy } from "../../src/types";
+import { TEAM_A, E2E_TEAM_B } from "../fixtures/teams";
 
 // --- Teams (from test-battle.ts) -------------------------------------------
 
-const teamA = packTeam([
-  { species: "Charizard", item: "Charizardite Y", ability: "Blaze",
-    moves: ["Heat Wave", "Protect", "Air Slash", "Solar Beam"],
-    nature: "Timid", statPoints: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 } },
-  { species: "Venusaur", item: "Lum Berry", ability: "Chlorophyll",
-    moves: ["Protect", "Sleep Powder", "Giga Drain", "Sludge Bomb"],
-    nature: "Modest", statPoints: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 } },
-  { species: "Garchomp", item: "Choice Scarf", ability: "Rough Skin",
-    moves: ["Earthquake", "Dragon Claw", "Rock Slide", "Protect"],
-    nature: "Jolly", statPoints: { hp: 2, atk: 32, def: 0, spa: 0, spd: 0, spe: 32 } },
-  { species: "Whimsicott", item: "Mental Herb", ability: "Prankster",
-    moves: ["Tailwind", "Helping Hand", "Encore", "Protect"],
-    nature: "Timid", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 0, spe: 32 } },
-  { species: "Pelipper", item: "Wacan Berry", ability: "Drizzle",
-    moves: ["Hydro Pump", "Hurricane", "Tailwind", "Protect"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Incineroar", item: "Sitrus Berry", ability: "Intimidate",
-    moves: ["Flare Blitz", "Darkest Lariat", "Fake Out", "Parting Shot"],
-    nature: "Adamant", statPoints: { hp: 32, atk: 32, def: 0, spa: 0, spd: 2, spe: 0 } },
-]);
-
-const teamB = packTeam([
-  { species: "Corviknight", item: "Leftovers", ability: "Pressure",
-    moves: ["Protect", "Tailwind", "Iron Defense", "Roost"],
-    nature: "Careful", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 32, spe: 0 } },
-  { species: "Meganium", item: "Meganiumite", ability: "Overgrow",
-    moves: ["Protect", "Light Screen", "Reflect", "Synthesis"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Sinistcha", item: "Focus Sash", ability: "Hospitality",
-    moves: ["Protect", "Rage Powder", "Trick Room", "Life Dew"],
-    nature: "Bold", statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 2, spe: 0 } },
-  { species: "Kingambit", item: "Chople Berry", ability: "Defiant",
-    moves: ["Protect", "Swords Dance", "Iron Defense", "Thunder Wave"],
-    nature: "Careful", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 32, spe: 0 } },
-  { species: "Meowstic", item: "Kasib Berry", ability: "Prankster",
-    moves: ["Protect", "Light Screen", "Reflect", "Helping Hand"],
-    nature: "Timid", statPoints: { hp: 32, atk: 0, def: 0, spa: 2, spd: 0, spe: 32 } },
-  { species: "Talonflame", item: "Sharp Beak", ability: "Gale Wings",
-    moves: ["Protect", "Roost", "Feather Dance", "Bulk Up"],
-    nature: "Jolly", statPoints: { hp: 32, atk: 0, def: 2, spa: 0, spd: 0, spe: 32 } },
-]);
+const teamA = packTeam(TEAM_A);
+const teamB = packTeam(E2E_TEAM_B);
 
 // --- Strategies (from test-battle.ts) --------------------------------------
 

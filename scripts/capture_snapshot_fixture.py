@@ -76,7 +76,7 @@ def main() -> None:
         # Step past team preview into move phase
         session, root, _ = sc.open_search(from_handle=handle)
         res = sc.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
-        move_phase_view = res["view"]
+        move_phase_view = res.view
         sc.close_search(session)
 
     fixture = {

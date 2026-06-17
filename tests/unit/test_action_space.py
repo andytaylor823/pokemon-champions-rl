@@ -249,8 +249,9 @@ class TestValidTargets:
         assert _valid_targets_for("allySide") == [-1]
         assert _valid_targets_for("allyTeam") == [-1]
 
-    def test_unknown_defaults_to_foe_targets(self):
-        assert _valid_targets_for("unknownType") == [1, 2]
+    def test_unknown_raises_error(self):
+        with pytest.raises(ValueError, match="Unknown Showdown target type"):
+            _valid_targets_for("unknownType")
 
 
 # ---------------------------------------------------------------------------

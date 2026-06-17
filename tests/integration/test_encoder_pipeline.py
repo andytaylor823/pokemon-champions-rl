@@ -84,7 +84,7 @@ class TestEncodeMovePhase:
         session, root, _ = sim_client.open_search(from_handle=live)
         try:
             res = sim_client.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
-            move_view = res["view"]
+            move_view = res.view
             assert move_view.phase in ("move", "forceSwitch")
 
             obs = encoder.encode(move_view, perspective="p1")
@@ -100,7 +100,7 @@ class TestEncodeMovePhase:
         session, root, _ = sim_client.open_search(from_handle=live)
         try:
             res = sim_client.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
-            move_view = res["view"]
+            move_view = res.view
 
             obs = encoder.encode(move_view, perspective="p1")
             mask = obs["action_mask"].numpy()
@@ -151,7 +151,7 @@ class TestNatureFeatures:
         session, root, _ = sim_client.open_search(from_handle=live)
         try:
             res = sim_client.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
-            move_view = res["view"]
+            move_view = res.view
             for side in move_view.snapshot.sides:
                 for i, mon in enumerate(side.pokemon):
                     nature_vec = _nature_onehot(mon)
@@ -170,7 +170,7 @@ class TestWeatherFeatures:
         try:
             # "team 5123" puts Pelipper (slot 5) active
             res = sim_client.step(root, {"p1": "team 5123", "p2": "team 1234"}, seed=[10, 20, 30, 40])
-            move_view = res["view"]
+            move_view = res.view
 
             # Verify the engine set rain
             assert move_view.snapshot.field.weather is not None, "Expected Drizzle to set rain"
@@ -178,8 +178,8 @@ class TestWeatherFeatures:
             obs = encoder.encode(move_view, perspective="p1")
             field = obs["field"]
 
-            # Weather one-hot (first 5 slots) should have at least one bit set
-            weather_slice = field[:5]
+            # Weather one-hot (first 4 slots) should have at least one bit set
+            weather_slice = field[:4]
             assert weather_slice.sum().item() > 0, "Weather one-hot should be non-zero with Drizzle active"
 
             # Rain is index 0 in _WEATHER_MAP
@@ -196,7 +196,7 @@ class TestPositionFeatures:
         session, root, _ = sim_client.open_search(from_handle=live)
         try:
             res = sim_client.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
-            move_view = res["view"]
+            move_view = res.view
             # Use the sub-encoder directly — no hand-derived offsets needed
             p1_side = move_view.snapshot.sides[0] if move_view.snapshot.sides[0].id == "p1" else move_view.snapshot.sides[1]
 

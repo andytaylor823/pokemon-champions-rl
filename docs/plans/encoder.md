@@ -16,7 +16,7 @@ watches:
 
 Phase 1 implementation complete. Modules: `src/encoder.py`, `src/action_space.py`,
 `src/vocab.py`, `src/obs_bundle.py`. Extended snapshot in `sim/src/sim-worker.ts`.
-Key numbers: A = 1036, F = 65 (entity feature dim), N = 12 at team preview / 8 after.
+Key numbers: A = 1089, F = 65 (entity feature dim), N = 12 at team preview / 8 after.
 
 ## Context
 

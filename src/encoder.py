@@ -35,18 +35,10 @@ NUM_STATUS = 7
 _STATUS_MAP = {"brn": 0, "par": 1, "slp": 2, "frz": 3, "tox": 4, "psn": 5}
 
 NUM_NATURES = 25
-NUM_STATS = 6
-# Stat stages: 7 (atk, def, spa, spd, spe, accuracy, evasion)
-NUM_BOOSTS = 7
 NUM_MOVE_FEATURES = 8  # pp_fraction + disabled flag = 2 per move x 4 moves
-NUM_VOLATILE_FEATURES = 3  # substitute_hp, stall_counter, active_turns
 
-# Positional/state flags: is_active, is_bench, is_fainted, item_consumed,
-#                         physical_slot (3 one-hot: left/right/bench), side_flag
-NUM_FLAGS = 8
-
-NUM_WEATHERS = 5
-NUM_TERRAINS = 5
+NUM_WEATHERS = 4
+NUM_TERRAINS = 4
 
 # Weather/terrain ID maps — lowercase to match engine status IDs
 _WEATHER_MAP = {"raindance": 0, "sunnyday": 1, "sandstorm": 2, "snow": 3, "hail": 3}
@@ -85,6 +77,7 @@ def encode(
     opp_pokemon = opp_side.pokemon
 
     n_tokens = len(my_pokemon) + len(opp_pokemon)
+    # Dims derived at module load via sentinel encoding — see bottom of file
     entities = torch.zeros(n_tokens, ENTITY_FEATURE_DIM)
     species_ids = torch.zeros(n_tokens, dtype=torch.long)
     ability_ids = torch.zeros(n_tokens, dtype=torch.long)
@@ -93,24 +86,17 @@ def encode(
     belief_weight = torch.ones(n_tokens)  # 1.0 for Phase 1
     slot_id = torch.zeros(n_tokens, dtype=torch.long)
 
-    # Encode my pokemon (slot_id = 0 for mine)
-    for i, mon in enumerate(my_pokemon):
-        entities[i] = _encode_pokemon_features(mon)
-        species_ids[i] = SPECIES_VOCAB.encode(mon.species or "")
-        ability_ids[i] = ABILITY_VOCAB.encode(mon.ability or "")
-        item_ids[i] = ITEM_VOCAB.encode(mon.item or "")
-        move_ids[i] = _encode_move_ids(mon.moves)
-        slot_id[i] = 0
-
-    # Encode opponent pokemon (slot_id = 1 for opponent)
-    offset = len(my_pokemon)
-    for i, mon in enumerate(opp_pokemon):
-        entities[offset + i] = _encode_pokemon_features(mon, is_opponent=True)
-        species_ids[offset + i] = SPECIES_VOCAB.encode(mon.species or "")
-        ability_ids[offset + i] = ABILITY_VOCAB.encode(mon.ability or "")
-        item_ids[offset + i] = ITEM_VOCAB.encode(mon.item or "")
-        move_ids[offset + i] = _encode_move_ids(mon.moves)
-        slot_id[offset + i] = 1
+    # Encode entity tokens: my 6 first, then opponent 6 (perspective-relative order)
+    token = 0
+    for pokemon, sid, is_opp in ((my_pokemon, 0, False), (opp_pokemon, 1, True)):
+        for mon in pokemon:
+            entities[token] = _encode_pokemon_features(mon, is_opponent=is_opp)
+            species_ids[token] = SPECIES_VOCAB.encode(mon.species or "")
+            ability_ids[token] = ABILITY_VOCAB.encode(mon.ability or "")
+            item_ids[token] = ITEM_VOCAB.encode(mon.item or "")
+            move_ids[token] = _encode_move_ids(mon.moves)
+            slot_id[token] = sid
+            token += 1
 
     # Build field features
     field_tensor = _encode_field(field_data)
@@ -249,7 +235,7 @@ def _encode_move_ids(moves: list[MoveSnapshot]) -> torch.Tensor:
 
 
 def _weather_onehot_dur(field_data: FieldSnapshot) -> torch.Tensor:
-    """Weather one-hot (5 slots) + normalized duration. [6]"""
+    """Weather one-hot (4 slots) + normalized duration. [5]"""
     vec = torch.zeros(NUM_WEATHERS + 1)
     if field_data.weather and field_data.weather in _WEATHER_MAP:
         vec[_WEATHER_MAP[field_data.weather]] = 1.0
@@ -258,7 +244,7 @@ def _weather_onehot_dur(field_data: FieldSnapshot) -> torch.Tensor:
 
 
 def _terrain_onehot_dur(field_data: FieldSnapshot) -> torch.Tensor:
-    """Terrain one-hot (5 slots) + normalized duration. [6]"""
+    """Terrain one-hot (4 slots) + normalized duration. [5]"""
     vec = torch.zeros(NUM_TERRAINS + 1)
     if field_data.terrain and field_data.terrain in _TERRAIN_MAP:
         vec[_TERRAIN_MAP[field_data.terrain]] = 1.0

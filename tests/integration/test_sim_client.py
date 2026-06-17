@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from sim_client import SimClient, SimError
+from sim_client import SimClient, SimError, StepResult
 
 
 def _rng_seed(rng: random.Random) -> list[int]:
@@ -69,7 +69,7 @@ class TestSearchSession:
             while not view.terminal and steps < 200:
                 choices = dict.fromkeys(view.to_move, "default")
                 res = sim_client.step(cur, choices, seed=_rng_seed(rng))
-                cur, view = res["child"], res["view"]
+                cur, view = res.child, res.view
                 steps += 1
 
             # Verify the game terminated properly
@@ -95,7 +95,7 @@ class TestSearchSession:
                 break
             choices = dict.fromkeys(view.to_move, "default")
             res = sim_client.step(cur, choices, seed=_rng_seed(rng))
-            cur, view = res["child"], res["view"]
+            cur, view = res.child, res.view
 
         # Record handle count before cleanup
         before = sim_client.stats()["handles"]

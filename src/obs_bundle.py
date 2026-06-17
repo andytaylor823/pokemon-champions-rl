@@ -31,6 +31,35 @@ def _build_ids_tensordict(
     return TensorDict({"species": species, "ability": ability, "item": item, "moves": moves}, batch_size=batch_size)
 
 
+def _assemble(
+    entities: torch.Tensor,
+    ids: TensorDict,
+    belief_weight: torch.Tensor,
+    slot_id: torch.Tensor,
+    field: torch.Tensor,
+    sides: torch.Tensor,
+    scalars: torch.Tensor,
+    action_mask: torch.Tensor,
+    padding_mask: torch.Tensor,
+    batch_size: list[int],
+) -> ObsBundle:
+    """Assemble the 9-key ObsBundle TensorDict from pre-built components."""
+    return TensorDict(
+        {
+            "entities": entities,
+            "ids": ids,
+            "belief_weight": belief_weight,
+            "slot_id": slot_id,
+            "field": field,
+            "sides": sides,
+            "scalars": scalars,
+            "action_mask": action_mask,
+            "padding_mask": padding_mask,
+        },
+        batch_size=batch_size,
+    )
+
+
 def make_obs_bundle(
     entities: torch.Tensor,
     species_ids: torch.Tensor,
@@ -61,18 +90,16 @@ def make_obs_bundle(
         action_mask: bool [A] — legal action mask
         padding_mask: bool [N] — true = real token, false = padding
     """
-    return TensorDict(
-        {
-            "entities": entities,
-            "ids": _build_ids_tensordict(species_ids, ability_ids, item_ids, move_ids, batch_size=[]),
-            "belief_weight": belief_weight,
-            "slot_id": slot_id,
-            "field": field,
-            "sides": sides,
-            "scalars": scalars,
-            "action_mask": action_mask,
-            "padding_mask": padding_mask,
-        },
+    return _assemble(
+        entities=entities,
+        ids=_build_ids_tensordict(species_ids, ability_ids, item_ids, move_ids, batch_size=[]),
+        belief_weight=belief_weight,
+        slot_id=slot_id,
+        field=field,
+        sides=sides,
+        scalars=scalars,
+        action_mask=action_mask,
+        padding_mask=padding_mask,
         batch_size=[],
     )
 
@@ -124,17 +151,15 @@ def collate_obs_bundles(bundles: list[ObsBundle]) -> ObsBundle:
         slot_id[i, :n] = b["slot_id"]
         padding_mask[i, :n] = True  # real tokens
 
-    return TensorDict(
-        {
-            "entities": entities,
-            "ids": _build_ids_tensordict(species_ids, ability_ids, item_ids, move_ids_t, batch_size=[batch_size]),
-            "belief_weight": belief_weight,
-            "slot_id": slot_id,
-            "field": fields,
-            "sides": sides_t,
-            "scalars": scalars_t,
-            "action_mask": action_masks,
-            "padding_mask": padding_mask,
-        },
+    return _assemble(
+        entities=entities,
+        ids=_build_ids_tensordict(species_ids, ability_ids, item_ids, move_ids_t, batch_size=[batch_size]),
+        belief_weight=belief_weight,
+        slot_id=slot_id,
+        field=fields,
+        sides=sides_t,
+        scalars=scalars_t,
+        action_mask=action_masks,
+        padding_mask=padding_mask,
         batch_size=[batch_size],
     )

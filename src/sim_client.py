@@ -22,6 +22,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from state_types import StateView
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +36,14 @@ Seed = list[int]  # [int, int, int, int]
 
 class SimError(RuntimeError):
     """Raised when the worker returns ok=false (e.g. an illegal choice)."""
+
+
+class StepResult(BaseModel):
+    """Typed result from SimClient.step() — drops RPC envelope noise (id, ok)."""
+
+    child: int
+    view: StateView
+    outcome: list[str]
 
 
 class SimClient:
@@ -94,11 +104,9 @@ class SimClient:
         root_view = self._parse_view(r["root_view"]) if r["root_view"] is not None else None
         return r["session"], r["root"], root_view
 
-    def step(self, handle: int, choices: dict[Side, str], seed: Seed) -> dict:
+    def step(self, handle: int, choices: dict[Side, str], seed: Seed) -> StepResult:
         r = self._rpc("step", handle=handle, choices=choices, seed=seed)
-        # Parse the embedded view while leaving child handle + outcome as-is
-        r["view"] = self._parse_view(r["view"])
-        return r
+        return StepResult.model_validate(r)
 
     def view(self, handle: int) -> StateView:
         return self._parse_view(self._rpc("view", handle=handle)["view"])

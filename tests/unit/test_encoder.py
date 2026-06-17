@@ -18,9 +18,7 @@ from action_space import A
 from encoder import (
     ENTITY_FEATURE_DIM,
     FIELD_FEATURE_DIM,
-    NUM_BOOSTS,
     NUM_NATURES,
-    NUM_STATS,
     NUM_STATUS,
     SCALAR_FEATURE_DIM,
     SIDE_FEATURE_DIM,
@@ -164,7 +162,7 @@ class TestNormStats:
 
     def test_shape(self):
         vec = _norm_stats(_minimal_mon())
-        assert vec.shape == (NUM_STATS,)
+        assert vec.shape == (6,)
 
     def test_known_stat(self):
         vec = _norm_stats(_minimal_mon(stats={"hp": 200, "atk": 120, "def": 90, "spa": 150, "spd": 100, "spe": 130}))
@@ -177,7 +175,7 @@ class TestBoostStages:
 
     def test_shape(self):
         vec = _boost_stages(_minimal_mon())
-        assert vec.shape == (NUM_BOOSTS,)
+        assert vec.shape == (7,)
 
     def test_max_boost(self):
         vec = _boost_stages(_minimal_mon(boosts={"atk": 6, "def": -6, "spa": 0, "spd": 0, "spe": 0, "accuracy": 0, "evasion": 0}))
@@ -354,7 +352,7 @@ class TestWeatherOnehotDur:
 
     def test_shape(self):
         vec = _weather_onehot_dur(_minimal_field())
-        assert vec.shape == (6,)
+        assert vec.shape == (5,)
 
     def test_empty_all_zeros(self):
         vec = _weather_onehot_dur(_minimal_field())
@@ -363,7 +361,7 @@ class TestWeatherOnehotDur:
     def test_rain(self):
         vec = _weather_onehot_dur(_minimal_field(weather="raindance", weatherDuration=5))
         assert vec[0].item() == 1.0
-        assert vec[5].item() == pytest.approx(5 / 20)
+        assert vec[4].item() == pytest.approx(5 / 20)
 
     def test_sun(self):
         vec = _weather_onehot_dur(_minimal_field(weather="sunnyday", weatherDuration=3))
@@ -375,7 +373,7 @@ class TestTerrainOnehotDur:
 
     def test_shape(self):
         vec = _terrain_onehot_dur(_minimal_field())
-        assert vec.shape == (6,)
+        assert vec.shape == (5,)
 
     def test_electric(self):
         vec = _terrain_onehot_dur(_minimal_field(terrain="electricterrain", terrainDuration=4))

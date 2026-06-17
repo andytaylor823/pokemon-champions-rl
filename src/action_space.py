@@ -25,33 +25,36 @@ Showdown targeting conventions:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from itertools import permutations
 from typing import Literal
 
 import numpy as np
-from pydantic import BaseModel
 
 # --- Typed slot action models -------------------------------------------------
 
 
-class MoveAction(BaseModel, frozen=True):
+@dataclass(frozen=True)
+class MoveAction:
     """A per-slot move action (use move N targeting T, optionally mega)."""
 
     type: Literal["move"] = "move"
-    move_idx: int
-    target: int
-    mega: bool
+    move_idx: int = 0
+    target: int = 0
+    mega: bool = False
 
 
-class SwitchAction(BaseModel, frozen=True):
+@dataclass(frozen=True)
+class SwitchAction:
     """A per-slot switch action (swap to bench position)."""
 
     type: Literal["switch"] = "switch"
-    bench_pos: int
-    team_slot: int
+    bench_pos: int = 0
+    team_slot: int = 0
 
 
-class PassAction(BaseModel, frozen=True):
+@dataclass(frozen=True)
+class PassAction:
     """A per-slot pass — the slot is empty and requires no action."""
 
     type: Literal["pass"] = "pass"
@@ -85,6 +88,11 @@ MOVE_PHASE_COUNT = ACTIONS_PER_SLOT * ACTIONS_PER_SLOT  # 729
 TEAM_PREVIEW_OFFSET = 0
 MOVE_PHASE_OFFSET = TEAM_PREVIEW_COUNT  # 360
 A = TEAM_PREVIEW_COUNT + MOVE_PHASE_COUNT  # 1089
+
+# Precomputed mapping: switch action index → bench position (for cross-slot constraint)
+_SWITCH_INDEX_TO_BENCH: dict[int, int] = {
+    NUM_MOVES * NUM_TARGETS * 2 + (pos - 1): pos for pos in (1, 2)
+}
 
 
 # --- Team preview helpers -----------------------------------------------------
@@ -262,10 +270,8 @@ def _fill_move_phase_mask(mask: np.ndarray, request: dict) -> None:
     # Build joint mask (outer product), excluding illegal combos
     for s1 in slot1_legal:
         for s2 in slot2_legal:
-            a1 = _index_to_slot_action(s1)
-            a2 = _index_to_slot_action(s2)
-            # Can't both switch to the same bench mon
-            if isinstance(a1, SwitchAction) and isinstance(a2, SwitchAction) and a1.team_slot == a2.team_slot:
+            # Can't both switch to the same bench mon (check via precomputed map)
+            if s1 in _SWITCH_INDEX_TO_BENCH and _SWITCH_INDEX_TO_BENCH.get(s1) == _SWITCH_INDEX_TO_BENCH.get(s2):
                 continue
             joint_idx = MOVE_PHASE_OFFSET + s1 * ACTIONS_PER_SLOT + s2
             mask[joint_idx] = True
@@ -341,5 +347,7 @@ def _valid_targets_for(target_type: str) -> list[int]:
     # Ally-only (Helping Hand, Heal Pulse targeting ally)
     if target_type in ("adjacentAlly", "adjacentAllyOrSelf", "allySide", "allyTeam"):
         return [-1]
-    # Default: allow both foe targets
-    return [1, 2]
+    # Scripted moves (Struggle, etc.) — engine picks the target
+    if target_type == "scripted":
+        return [1]
+    raise ValueError(f"Unknown Showdown target type: {target_type!r}")

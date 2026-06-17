@@ -7,9 +7,13 @@ from action_space import (
     ACTIONS_PER_SLOT,
     MOVE_PHASE_COUNT,
     MOVE_PHASE_OFFSET,
+    PASS_INDEX,
     TEAM_PREVIEW_COUNT,
     TEAM_PREVIEW_OFFSET,
     A,
+    MoveAction,
+    PassAction,
+    SwitchAction,
     _index_to_slot_action,
     _slot_action_to_index,
     _valid_targets_for,
@@ -31,16 +35,19 @@ class TestConstants:
         assert TEAM_PREVIEW_COUNT == 360
 
     def test_actions_per_slot(self):
-        # 4 moves x 3 targets x 2 (normal + mega) + 2 switches = 26
-        assert ACTIONS_PER_SLOT == 26
+        # 4 moves x 3 targets x 2 (normal + mega) + 2 switches + 1 pass = 27
+        assert ACTIONS_PER_SLOT == 27
+
+    def test_pass_index(self):
+        assert PASS_INDEX == 26
 
     def test_move_phase_count(self):
-        # 26 x 26 = 676
-        assert MOVE_PHASE_COUNT == 676
+        # 27 x 27 = 729
+        assert MOVE_PHASE_COUNT == 729
 
     def test_total_action_space(self):
-        # 360 + 676 = 1036
-        assert A == 1036
+        # 360 + 729 = 1089
+        assert A == 1089
 
     def test_offsets(self):
         assert TEAM_PREVIEW_OFFSET == 0
@@ -81,29 +88,37 @@ class TestSlotActions:
 
     def test_decode_move_action(self):
         action = _index_to_slot_action(0)
-        assert action == {"type": "move", "move_idx": 0, "target": 1, "mega": False}
+        assert isinstance(action, MoveAction)
+        assert action == MoveAction(move_idx=0, target=1, mega=False)
 
     def test_decode_mega_action(self):
         action = _index_to_slot_action(12)
-        assert action == {"type": "move", "move_idx": 0, "target": 1, "mega": True}
+        assert isinstance(action, MoveAction)
+        assert action == MoveAction(move_idx=0, target=1, mega=True)
 
     def test_decode_switch_action(self):
         action = _index_to_slot_action(24)
-        assert action == {"type": "switch", "bench_pos": 1, "team_slot": 3}
+        assert isinstance(action, SwitchAction)
+        assert action == SwitchAction(bench_pos=1, team_slot=3)
         action2 = _index_to_slot_action(25)
-        assert action2 == {"type": "switch", "bench_pos": 2, "team_slot": 4}
+        assert action2 == SwitchAction(bench_pos=2, team_slot=4)
+
+    def test_decode_pass_action(self):
+        action = _index_to_slot_action(PASS_INDEX)
+        assert isinstance(action, PassAction)
 
     def test_roundtrip_all_slot_indices(self):
-        # Every slot index [0, 26) should survive encode → decode → encode
+        # Every slot index [0, 27) should survive encode → decode → encode
         for idx in range(ACTIONS_PER_SLOT):
             action = _index_to_slot_action(idx)
-            if action["type"] == "switch":
-                re_idx = _slot_action_to_index(None, None, False, action["bench_pos"])
+            if isinstance(action, PassAction):
+                assert idx == PASS_INDEX
+            elif isinstance(action, SwitchAction):
+                re_idx = _slot_action_to_index(None, None, False, action.bench_pos)
+                assert re_idx == idx, f"Round-trip failed for slot index {idx}"
             else:
-                re_idx = _slot_action_to_index(
-                    action["move_idx"], action["target"], action["mega"], None
-                )
-            assert re_idx == idx, f"Round-trip failed for slot index {idx}"
+                re_idx = _slot_action_to_index(action.move_idx, action.target, action.mega, None)
+                assert re_idx == idx, f"Round-trip failed for slot index {idx}"
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +153,10 @@ class TestChoiceStringRoundTrips:
             assert choice_string_to_index(choice) == i
 
     def test_move_phase_basic_move(self):
-        # First move-phase action: slot1=move1 target foe-left, slot2=move1 target foe-left
-        idx = MOVE_PHASE_OFFSET
+        # Slot1=move1 target foe-left, slot2=move1 target foe-left (both index 0)
+        slot1_idx = _slot_action_to_index(0, 1, False, None)
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
         choice = index_to_choice_string(idx)
         assert "move 1 1" in choice
         assert choice_string_to_index(choice) == idx
@@ -164,6 +181,15 @@ class TestChoiceStringRoundTrips:
         assert "switch 4" in choice
         assert choice_string_to_index(choice) == joint_idx
 
+    def test_move_phase_with_pass(self):
+        # Slot1 is a move, slot2 is pass (single-mon endgame)
+        slot1_idx = _slot_action_to_index(0, 1, False, None)
+        joint_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + PASS_INDEX
+        choice = index_to_choice_string(joint_idx)
+        # Pass is omitted — only slot1's choice appears
+        assert choice == "move 1 1"
+        assert choice_string_to_index(choice) == joint_idx
+
     def test_move_phase_roundtrip_sample(self):
         # Sample move-phase indices at regular intervals
         for i in range(MOVE_PHASE_OFFSET, A, 50):
@@ -179,9 +205,12 @@ class TestChoiceStringRoundTrips:
 class TestErrorPaths:
     """Verify correct errors on invalid input."""
 
-    def test_invalid_choice_string_no_comma(self):
-        with pytest.raises(ValueError, match="Expected joint choice"):
-            choice_string_to_index("move 1 1")
+    def test_single_slot_choice_treated_as_pass(self):
+        # Single-slot choice is valid (other slot is pass), not an error
+        idx = choice_string_to_index("move 1 1")
+        slot1 = _slot_action_to_index(0, 1, False, None)
+        expected = MOVE_PHASE_OFFSET + slot1 * ACTIONS_PER_SLOT + PASS_INDEX
+        assert idx == expected
 
     def test_invalid_fragment_type(self):
         with pytest.raises(ValueError, match="Expected 'move"):
@@ -240,6 +269,11 @@ class TestLegalMask:
         assert mask.sum() == TEAM_PREVIEW_COUNT
         assert mask[:TEAM_PREVIEW_COUNT].all()
         assert not mask[TEAM_PREVIEW_COUNT:].any()
+
+    def test_none_request_returns_all_false(self):
+        mask = legal_mask(None, "move")
+        assert mask.shape == (A,)
+        assert not mask.any()
 
     def test_unknown_phase_returns_all_false(self):
         mask = legal_mask({}, "unknownPhase")
@@ -348,6 +382,30 @@ class TestLegalMask:
             for s2 in range(ACTIONS_PER_SLOT)
         )
         assert any_with_move1, "Non-disabled move should be legal"
+
+    def test_single_mon_endgame_uses_pass(self):
+        # Only one active mon — slot2 should be pass
+        request = {
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 5, "target": "normal"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "0 fnt"},
+                {"condition": "0 fnt"},
+                {"condition": "0 fnt"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Legal actions should be slot1 x PASS only
+        slot1_move = _slot_action_to_index(0, 1, False, None)
+        joint_with_pass = MOVE_PHASE_OFFSET + slot1_move * ACTIONS_PER_SLOT + PASS_INDEX
+        assert mask[joint_with_pass], "slot1 move + slot2 pass should be legal"
+        # No joint action should pair slot1 with a non-pass slot2
+        for s2 in range(ACTIONS_PER_SLOT):
+            if s2 == PASS_INDEX:
+                continue
+            assert not mask[MOVE_PHASE_OFFSET + slot1_move * ACTIONS_PER_SLOT + s2]
 
     def test_mega_available(self):
         request = {

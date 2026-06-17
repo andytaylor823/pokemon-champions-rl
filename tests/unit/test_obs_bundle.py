@@ -4,10 +4,11 @@ from __future__ import annotations
 import pytest
 import torch
 
+from action_space import A
 from obs_bundle import collate_obs_bundles, make_obs_bundle
 
 
-def _make_dummy_bundle(n_tokens: int, f_dim: int = 8, a_dim: int = 1036) -> dict:
+def _make_dummy_bundle(n_tokens: int, f_dim: int = 8, a_dim: int = A) -> dict:
     """Create dummy tensors with known shapes for a single ObsBundle."""
     return {
         "entities": torch.randn(n_tokens, f_dim),
@@ -66,9 +67,9 @@ class TestMakeObsBundle:
         assert bundle["ids", "moves"].shape == (12, 4)
 
     def test_action_mask_shape(self):
-        args = _make_dummy_bundle(12, a_dim=1036)
+        args = _make_dummy_bundle(12, a_dim=A)
         bundle = make_obs_bundle(**args)
-        assert bundle["action_mask"].shape == (1036,)
+        assert bundle["action_mask"].shape == (A,)
 
     def test_field_and_scalars_shapes(self):
         args = _make_dummy_bundle(12)
@@ -110,7 +111,7 @@ class TestCollateUniform:
     def test_action_mask_stacked(self):
         bundles = [make_obs_bundle(**_make_dummy_bundle(12)) for _ in range(3)]
         batched = collate_obs_bundles(bundles)
-        assert batched["action_mask"].shape == (3, 1036)
+        assert batched["action_mask"].shape == (3, A)
 
     def test_padding_mask_all_true_uniform(self):
         bundles = [make_obs_bundle(**_make_dummy_bundle(12)) for _ in range(3)]

@@ -9,11 +9,12 @@ Layout:
   [0, TEAM_PREVIEW_COUNT)           — team preview actions (P(6,4) = 360 orderings)
   [TEAM_PREVIEW_COUNT, A)           — move-phase joint actions (slot1 x slot2)
 
-Per-slot actions during move phase (ACTIONS_PER_SLOT = 26):
+Per-slot actions during move phase (ACTIONS_PER_SLOT = 27):
   [0, 12)   — move 1-4 x target {1, 2, -1} (foe-left, foe-right, ally)
   [12, 24)  — move 1-4 x target {1, 2, -1} + mega evolution
   [24, 25)  — switch to bench position 1 (team slot 3)
   [25, 26)  — switch to bench position 2 (team slot 4)
+  [26]      — pass (empty slot, no action required)
 
 Showdown targeting conventions:
   - target  1 = opponent slot 1 (left foe)
@@ -25,8 +26,38 @@ Showdown targeting conventions:
 from __future__ import annotations
 
 from itertools import permutations
+from typing import Literal
 
 import numpy as np
+from pydantic import BaseModel
+
+# --- Typed slot action models -------------------------------------------------
+
+
+class MoveAction(BaseModel, frozen=True):
+    """A per-slot move action (use move N targeting T, optionally mega)."""
+
+    type: Literal["move"] = "move"
+    move_idx: int
+    target: int
+    mega: bool
+
+
+class SwitchAction(BaseModel, frozen=True):
+    """A per-slot switch action (swap to bench position)."""
+
+    type: Literal["switch"] = "switch"
+    bench_pos: int
+    team_slot: int
+
+
+class PassAction(BaseModel, frozen=True):
+    """A per-slot pass — the slot is empty and requires no action."""
+
+    type: Literal["pass"] = "pass"
+
+
+SlotAction = MoveAction | SwitchAction | PassAction
 
 # --- Constants ----------------------------------------------------------------
 
@@ -36,22 +67,24 @@ TARGETS = (1, 2, -1)  # foe-left, foe-right, ally
 NUM_TARGETS = len(TARGETS)
 NUM_SWITCHES = 2  # bench positions (team slots 3 and 4 in a bring-4 format)
 
-# Per-slot: 4 moves x 3 targets = 12 base + 12 mega + 2 switches = 26
-ACTIONS_PER_SLOT = NUM_MOVES * NUM_TARGETS * 2 + NUM_SWITCHES  # 26
+# Per-slot: 4 moves x 3 targets = 12 base + 12 mega + 2 switches + 1 pass = 27
+PASS_INDEX = NUM_MOVES * NUM_TARGETS * 2 + NUM_SWITCHES  # 26
+ACTIONS_PER_SLOT = PASS_INDEX + 1  # 27
 
 # Team preview: P(6,4) = 6*5*4*3 = 360 orderings
 TEAM_SIZE = 6
 BRING_COUNT = 4
 _TEAM_PERMS = list(permutations(range(1, TEAM_SIZE + 1), BRING_COUNT))
+_TEAM_PERM_INDEX: dict[tuple[int, ...], int] = {p: i for i, p in enumerate(_TEAM_PERMS)}
 TEAM_PREVIEW_COUNT = len(_TEAM_PERMS)  # 360
 
 # Move phase: joint = slot1 x slot2
-MOVE_PHASE_COUNT = ACTIONS_PER_SLOT * ACTIONS_PER_SLOT  # 676
+MOVE_PHASE_COUNT = ACTIONS_PER_SLOT * ACTIONS_PER_SLOT  # 729
 
 # Total canonical action space
 TEAM_PREVIEW_OFFSET = 0
 MOVE_PHASE_OFFSET = TEAM_PREVIEW_COUNT  # 360
-A = TEAM_PREVIEW_COUNT + MOVE_PHASE_COUNT  # 1036
+A = TEAM_PREVIEW_COUNT + MOVE_PHASE_COUNT  # 1089
 
 
 # --- Team preview helpers -----------------------------------------------------
@@ -59,7 +92,7 @@ A = TEAM_PREVIEW_COUNT + MOVE_PHASE_COUNT  # 1036
 
 def _team_perm_to_index(perm: tuple[int, ...]) -> int:
     """Map a team ordering tuple (e.g. (1,3,4,2)) to its canonical index."""
-    return _TEAM_PERMS.index(perm)
+    return _TEAM_PERM_INDEX[perm]
 
 
 def _index_to_team_perm(idx: int) -> tuple[int, ...]:
@@ -71,7 +104,7 @@ def _index_to_team_perm(idx: int) -> tuple[int, ...]:
 
 
 def _slot_action_to_index(move_idx: int | None, target: int | None, mega: bool, switch_pos: int | None) -> int:
-    """Encode a single-slot action into its per-slot index [0, 26)."""
+    """Encode a single-slot action into its per-slot index [0, 27)."""
     if switch_pos is not None:
         # switch_pos is 1-indexed bench position (1 or 2)
         return NUM_MOVES * NUM_TARGETS * 2 + (switch_pos - 1)
@@ -85,20 +118,21 @@ def _slot_action_to_index(move_idx: int | None, target: int | None, mega: bool, 
     return base
 
 
-def _index_to_slot_action(idx: int) -> dict:
-    """Decode a per-slot index [0, 26) into its components."""
+def _index_to_slot_action(idx: int) -> SlotAction:
+    """Decode a per-slot index [0, 27) into a typed SlotAction."""
+    if idx == PASS_INDEX:
+        return PassAction()
     mega_offset = NUM_MOVES * NUM_TARGETS  # 12
     switch_offset = mega_offset * 2  # 24
     if idx >= switch_offset:
-        # Switch action
         bench_pos = idx - switch_offset + 1
-        return {"type": "switch", "bench_pos": bench_pos, "team_slot": bench_pos + 2}
+        return SwitchAction(bench_pos=bench_pos, team_slot=bench_pos + 2)
     mega = idx >= mega_offset
     if mega:
         idx -= mega_offset
     move_idx = idx // NUM_TARGETS
     target_idx = idx % NUM_TARGETS
-    return {"type": "move", "move_idx": move_idx, "target": TARGETS[target_idx], "mega": mega}
+    return MoveAction(move_idx=move_idx, target=TARGETS[target_idx], mega=mega)
 
 
 # --- Public API ---------------------------------------------------------------
@@ -109,9 +143,9 @@ def index_to_choice_string(action_idx: int) -> str:
 
     For team preview: returns e.g. "team 1342"
     For move phase: returns e.g. "move 1 1 mega, switch 3"
+    When one slot is a pass, it is omitted (e.g. "move 1 1" with no comma).
     """
     if action_idx < TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT:
-        # Team preview action
         perm = _index_to_team_perm(action_idx - TEAM_PREVIEW_OFFSET)
         return f"team {''.join(str(p) for p in perm)}"
 
@@ -122,19 +156,27 @@ def index_to_choice_string(action_idx: int) -> str:
 
     slot1_str = _slot_action_to_choice(slot1_idx)
     slot2_str = _slot_action_to_choice(slot2_idx)
-    return f"{slot1_str}, {slot2_str}"
+
+    # Omit pass slots — Showdown expects only one choice when a slot is empty
+    if slot1_str and slot2_str:
+        return f"{slot1_str}, {slot2_str}"
+    return slot1_str or slot2_str or ""
 
 
 def _slot_action_to_choice(slot_idx: int) -> str:
-    """Convert a per-slot action index to its Showdown choice string fragment."""
+    """Convert a per-slot action index to its Showdown choice string fragment.
+
+    Returns empty string for a pass action.
+    """
     action = _index_to_slot_action(slot_idx)
-    if action["type"] == "switch":
-        return f"switch {action['team_slot']}"
-    # Move: "move N T [mega]" where N is 1-indexed move slot, T is target
-    move_num = action["move_idx"] + 1  # 1-indexed for Showdown
-    target = action["target"]
-    mega_str = " mega" if action["mega"] else ""
-    return f"move {move_num} {target}{mega_str}"
+    if isinstance(action, PassAction):
+        return ""
+    if isinstance(action, SwitchAction):
+        return f"switch {action.team_slot}"
+    # MoveAction: "move N T [mega]" where N is 1-indexed
+    move_num = action.move_idx + 1
+    mega_str = " mega" if action.mega else ""
+    return f"move {move_num} {action.target}{mega_str}"
 
 
 def choice_string_to_index(choice: str) -> int:
@@ -148,18 +190,25 @@ def choice_string_to_index(choice: str) -> int:
         perm = tuple(int(d) for d in digits)
         return TEAM_PREVIEW_OFFSET + _team_perm_to_index(perm)
 
-    # Move phase: "slot1_choice, slot2_choice"
+    # Move phase: "slot1_choice, slot2_choice" or single choice (pass in other slot)
     parts = choice.split(", ")
-    if len(parts) != 2:
-        raise ValueError(f"Expected joint choice 'X, Y', got: {choice!r}")
-    slot1_idx = _choice_to_slot_action(parts[0])
-    slot2_idx = _choice_to_slot_action(parts[1])
+    if len(parts) == 2:
+        slot1_idx = _choice_to_slot_action(parts[0])
+        slot2_idx = _choice_to_slot_action(parts[1])
+    elif len(parts) == 1:
+        # Single slot choice — other slot is pass
+        slot1_idx = _choice_to_slot_action(parts[0])
+        slot2_idx = PASS_INDEX
+    else:
+        raise ValueError(f"Expected joint choice 'X, Y' or single choice, got: {choice!r}")
     return MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
 
 
 def _choice_to_slot_action(fragment: str) -> int:
     """Parse a single slot's choice string fragment into its per-slot index."""
     fragment = fragment.strip()
+    if not fragment or fragment == "pass":
+        return PASS_INDEX
     if fragment.startswith("switch "):
         team_slot = int(fragment.split()[1])
         bench_pos = team_slot - 2  # team slot 3 -> bench pos 1, slot 4 -> bench pos 2
@@ -175,11 +224,12 @@ def _choice_to_slot_action(fragment: str) -> int:
     return _slot_action_to_index(move_num - 1, target, mega, None)
 
 
-def legal_mask(request: dict, phase: str) -> np.ndarray:
+def legal_mask(request: dict | None, phase: str) -> np.ndarray:
     """Build a bool mask of shape [A] from a Showdown activeRequest object.
 
     Args:
-        request: The raw Showdown request for one side (from view["legal"][side]).
+        request: The raw Showdown request for one side, or None if the
+            perspective has no legal actions (returns all-zeros).
         phase: The battle phase ("teamPreview", "move", "forceSwitch").
 
     Returns:
@@ -187,8 +237,10 @@ def legal_mask(request: dict, phase: str) -> np.ndarray:
     """
     mask = np.zeros(A, dtype=bool)
 
+    if request is None:
+        return mask
+
     if phase == "teamPreview":
-        # All team orderings are legal during team preview
         mask[TEAM_PREVIEW_OFFSET : TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT] = True
         return mask
 
@@ -204,17 +256,16 @@ def _fill_move_phase_mask(mask: np.ndarray, request: dict) -> None:
     active = request.get("active", [])
     side_pokemon = request.get("side", {}).get("pokemon", [])
 
-    # Determine per-slot legal actions
     slot1_legal = _slot_legal_actions(active, side_pokemon, slot_idx=0, request=request)
     slot2_legal = _slot_legal_actions(active, side_pokemon, slot_idx=1, request=request)
 
     # Build joint mask (outer product), excluding illegal combos
     for s1 in slot1_legal:
         for s2 in slot2_legal:
-            # Can't both switch to the same bench mon
             a1 = _index_to_slot_action(s1)
             a2 = _index_to_slot_action(s2)
-            if a1["type"] == "switch" and a2["type"] == "switch" and a1["team_slot"] == a2["team_slot"]:
+            # Can't both switch to the same bench mon
+            if isinstance(a1, SwitchAction) and isinstance(a2, SwitchAction) and a1.team_slot == a2.team_slot:
                 continue
             joint_idx = MOVE_PHASE_OFFSET + s1 * ACTIONS_PER_SLOT + s2
             mask[joint_idx] = True
@@ -229,11 +280,9 @@ def _slot_legal_actions(active: list, side_pokemon: list, slot_idx: int, request
     if force_switch and slot_idx < len(force_switch) and force_switch[slot_idx]:
         return _legal_switches(side_pokemon)
 
-    # If this slot doesn't exist (one mon left), return pass-like empty
+    # If this slot doesn't exist (one mon left), it is a pass
     if slot_idx >= len(active):
-        # Only one active mon — slot 2 gets a "pass": allow all switches as placeholder
-        # In practice this means the joint action degenerates to slot1's choices
-        return [NUM_MOVES * NUM_TARGETS * 2]  # first switch as placeholder
+        return [PASS_INDEX]
 
     slot_data = active[slot_idx]
     moves = slot_data.get("moves", [])
@@ -243,14 +292,11 @@ def _slot_legal_actions(active: list, side_pokemon: list, slot_idx: int, request
     for move_idx, move in enumerate(moves):
         if move.get("disabled") or move.get("pp", 0) <= 0:
             continue
-        # Determine valid targets for this move
         target_type = move.get("target", "normal")
         valid_targets = _valid_targets_for(target_type)
         for target in valid_targets:
-            # Base move (no mega)
             idx = _slot_action_to_index(move_idx, target, mega=False, switch_pos=None)
             legal.append(idx)
-            # With mega if available
             if can_mega:
                 idx_mega = _slot_action_to_index(move_idx, target, mega=True, switch_pos=None)
                 legal.append(idx_mega)

@@ -16,6 +16,21 @@ from tensordict import TensorDict
 ObsBundle = TensorDict
 
 
+def _build_ids_tensordict(
+    species: torch.Tensor,
+    ability: torch.Tensor,
+    item: torch.Tensor,
+    moves: torch.Tensor,
+    batch_size: list[int],
+) -> TensorDict:
+    """Construct the nested 'ids' TensorDict sub-structure.
+
+    Single source of truth for the categorical-ID layout used by both
+    make_obs_bundle and collate_obs_bundles.
+    """
+    return TensorDict({"species": species, "ability": ability, "item": item, "moves": moves}, batch_size=batch_size)
+
+
 def make_obs_bundle(
     entities: torch.Tensor,
     species_ids: torch.Tensor,
@@ -49,15 +64,7 @@ def make_obs_bundle(
     return TensorDict(
         {
             "entities": entities,
-            "ids": TensorDict(
-                {
-                    "species": species_ids,
-                    "ability": ability_ids,
-                    "item": item_ids,
-                    "moves": move_ids,
-                },
-                batch_size=[],
-            ),
+            "ids": _build_ids_tensordict(species_ids, ability_ids, item_ids, move_ids, batch_size=[]),
             "belief_weight": belief_weight,
             "slot_id": slot_id,
             "field": field,
@@ -120,15 +127,7 @@ def collate_obs_bundles(bundles: list[ObsBundle]) -> ObsBundle:
     return TensorDict(
         {
             "entities": entities,
-            "ids": TensorDict(
-                {
-                    "species": species_ids,
-                    "ability": ability_ids,
-                    "item": item_ids,
-                    "moves": move_ids_t,
-                },
-                batch_size=[batch_size],
-            ),
+            "ids": _build_ids_tensordict(species_ids, ability_ids, item_ids, move_ids_t, batch_size=[batch_size]),
             "belief_weight": belief_weight,
             "slot_id": slot_id,
             "field": fields,

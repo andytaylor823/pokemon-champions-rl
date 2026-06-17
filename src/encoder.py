@@ -10,7 +10,6 @@ Pydantic models (state_types.py) validated by SimClient, never raw dicts.
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 
 import action_space
@@ -37,7 +36,8 @@ _STATUS_MAP = {"brn": 0, "par": 1, "slp": 2, "frz": 3, "tox": 4, "psn": 5}
 
 NUM_NATURES = 25
 NUM_STATS = 6
-NUM_BOOSTS = 7  # atk, def, spa, spd, spe, accuracy, evasion
+# Stat stages: 7 (atk, def, spa, spd, spe, accuracy, evasion)
+NUM_BOOSTS = 7
 NUM_MOVE_FEATURES = 8  # pp_fraction + disabled flag = 2 per move x 4 moves
 NUM_VOLATILE_FEATURES = 3  # substitute_hp, stall_counter, active_turns
 
@@ -123,8 +123,7 @@ def encode(
 
     # Build action mask
     phase = view.phase
-    legal = view.legal
-    mask = action_space.legal_mask(legal[perspective], phase) if perspective in legal else np.zeros(action_space.A, dtype=bool)
+    mask = action_space.legal_mask(view.legal.get(perspective), phase)
     action_mask = torch.from_numpy(mask)
 
     # Padding mask: all true in Phase 1 (no padding within a single observation)

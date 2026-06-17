@@ -31,16 +31,17 @@ def find_files() -> list[Path]:
     files: list[Path] = []
     for root_dir in RULE_GLOBS:
         if root_dir.is_dir():
-            for p in sorted(root_dir.rglob("*")):
-                if p.is_file() and p.suffix in EXTENSIONS:
-                    files.append(p)
+            files.extend(
+                p for p in sorted(root_dir.rglob("*"))
+                if p.is_file() and p.suffix in EXTENSIONS
+            )
     return files
 
 
 def get_head_sha() -> str:
     """Return the short SHA of the current HEAD commit."""
     return subprocess.check_output(
-        ["git", "rev-parse", "--short", "HEAD"],
+        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
         cwd=REPO_ROOT,
         text=True,
     ).strip()

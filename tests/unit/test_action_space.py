@@ -1,16 +1,15 @@
 """Unit tests for the action_space module — constants, encoding round-trips, legal mask."""
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from action_space import (
-    A,
     ACTIONS_PER_SLOT,
     MOVE_PHASE_COUNT,
     MOVE_PHASE_OFFSET,
     TEAM_PREVIEW_COUNT,
     TEAM_PREVIEW_OFFSET,
+    A,
     _index_to_slot_action,
     _slot_action_to_index,
     _valid_targets_for,
@@ -18,7 +17,6 @@ from action_space import (
     index_to_choice_string,
     legal_mask,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

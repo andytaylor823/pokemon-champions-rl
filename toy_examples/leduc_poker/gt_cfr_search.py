@@ -24,26 +24,26 @@ import numpy as np
 import torch
 
 from toy_examples.leduc_poker.game import (
-    RANKS,
+    ANTE,
+    BET_BIG,
+    BET_SMALL,
+    CALL,
+    CHANCE,
+    CHECK,
     DECK_SIZE,
-    SUITS_PER_RANK,
+    FOLD,
     PLAYER_1,
     PLAYER_2,
-    CHANCE,
-    ANTE,
-    CHECK,
-    BET_SMALL,
-    BET_BIG,
-    FOLD,
-    CALL,
-    RAISE_SMALL,
     RAISE_BIG,
+    RAISE_SMALL,
+    RANKS,
     ROUND1_BET_SIZES,
     ROUND2_BET_SIZES,
+    SUITS_PER_RANK,
     LeducState,
+    _split_rounds,
     card_rank,
     card_rank_index,
-    _split_rounds,
 )
 from toy_examples.leduc_poker.network import (
     LeducCVPN,
@@ -74,7 +74,7 @@ class SearchNode:
     # Node type
     node_type: NodeType = NodeType.PLAYER
     # Children: action_or_rank -> SearchNode
-    children: dict[str, "SearchNode"] = field(default_factory=dict)
+    children: dict[str, SearchNode] = field(default_factory=dict)
     # Whether this node has been expanded
     expanded: bool = False
     # CFR+ cumulative regrets per info set: {info_key: {action: regret}}
@@ -172,8 +172,7 @@ def _terminal_utility(
         folder = PLAYER_1 if len(round_actions) % 2 == 1 else PLAYER_2
         if folder == PLAYER_1:
             return float(-p1_committed)  # P1 folded, loses investment
-        else:
-            return float(total_pot - p1_committed)  # P2 folded, P1 wins
+        return float(total_pot - p1_committed)  # P2 folded, P1 wins
 
     # Showdown: compare ranks
     p1_rank = card_rank_index(p1_card)
@@ -196,8 +195,7 @@ def _terminal_utility(
 
     if winner == PLAYER_1:
         return float(total_pot - p1_committed)
-    else:
-        return float(-p1_committed)
+    return float(-p1_committed)
 
 
 def _info_set_key(rank: str, community_rank: str | None, history: tuple[str, ...]) -> str:
@@ -218,7 +216,6 @@ def _compute_pot(
     for action in history:
         if state.is_chance_node():
             # Need to apply community card first
-            target = RANKS.index(community_rank) * SUITS_PER_RANK
             for s in range(SUITS_PER_RANK):
                 candidate = RANKS.index(community_rank) * SUITS_PER_RANK + s
                 if candidate != p1_card and candidate != p2_card:
@@ -314,7 +311,7 @@ def _expand_node(node: SearchNode, net: LeducCVPN) -> None:
     _evaluate_node(node, net)
 
     for action in actions:
-        child_history = node.history + (action,)
+        child_history = (*node.history, action)
         # Compute child pot using a concrete deal (pot doesn't depend on specific cards
         # for action transitions, only on the action and current pot)
         child_pot = _updated_pot_from_action(node.pot, action, node.history, node.community_rank)
@@ -354,21 +351,19 @@ def _updated_pot_from_action(
 
     if action in (CHECK, FOLD):
         return (p1, p2)
-    elif action == CALL:
+    if action == CALL:
         if player == PLAYER_1:
             return (p2, p2)
-        else:
-            return (p1, p1)
-    elif action in (BET_SMALL, RAISE_SMALL):
+        return (p1, p1)
+    if action in (BET_SMALL, RAISE_SMALL):
         opp = p2 if player == PLAYER_1 else p1
         new_val = opp + small_inc
         return (new_val, p2) if player == PLAYER_1 else (p1, new_val)
-    elif action in (BET_BIG, RAISE_BIG):
+    if action in (BET_BIG, RAISE_BIG):
         opp = p2 if player == PLAYER_1 else p1
         new_val = opp + big_inc
         return (new_val, p2) if player == PLAYER_1 else (p1, new_val)
-    else:
-        raise ValueError(f"Unknown action: {action}")
+    raise ValueError(f"Unknown action: {action}")
 
 
 def _expand_tree_fully(node: SearchNode, net: LeducCVPN, max_depth: int = 20) -> None:
@@ -464,11 +459,11 @@ def _cfr_traverse(
     if acting_player == traversing_player:
         # Initialize accumulators if needed
         if info_key not in node.cumulative_regret:
-            node.cumulative_regret[info_key] = {a: 0.0 for a in actions}
+            node.cumulative_regret[info_key] = dict.fromkeys(actions, 0.0)
         if info_key not in node.strategy_sum:
-            node.strategy_sum[info_key] = {a: 0.0 for a in actions}
+            node.strategy_sum[info_key] = dict.fromkeys(actions, 0.0)
         if info_key not in node.visit_counts:
-            node.visit_counts[info_key] = {a: 0 for a in actions}
+            node.visit_counts[info_key] = dict.fromkeys(actions, 0)
 
         # Counterfactual reach: opponent's contribution
         cf_reach = reach_p2 if traversing_player == PLAYER_1 else reach_p1
@@ -526,10 +521,7 @@ def gt_cfr_search(
     # Determine root node type
     if root_state.is_terminal():
         return {}, {}, {}
-    if root_state.is_chance_node():
-        root_type = NodeType.CHANCE
-    else:
-        root_type = NodeType.PLAYER
+    root_type = NodeType.CHANCE if root_state.is_chance_node() else NodeType.PLAYER
 
     # Build search tree
     root = SearchNode(

@@ -30,6 +30,7 @@ import type {
   BattleSnapshot,
   PokemonSnapshot,
   Side,
+  SideConditionSnapshot,
   SideSnapshot,
   StateView,
 } from "./types";
@@ -146,6 +147,7 @@ function snapshotPokemon(p: any): PokemonSnapshot {
 
   return {
     species: p.species?.id ?? null,
+    nature: p.set?.nature ?? null,
     level: p.level,
     gender: p.gender,
     hp: p.hp,
@@ -175,9 +177,13 @@ function snapshotPokemon(p: any): PokemonSnapshot {
 }
 
 function snapshotSide(side: any): SideSnapshot {
-  const conds: Record<string, number | null> = {};
+  const conds: Record<string, SideConditionSnapshot> = {};
   for (const id of Object.keys(side.sideConditions ?? {})) {
-    conds[id] = side.sideConditions[id]?.duration ?? null;
+    const sc = side.sideConditions[id];
+    conds[id] = {
+      duration: sc?.duration ?? null,
+      layers: sc?.layers ?? null,
+    };
   }
   return {
     id: side.id,

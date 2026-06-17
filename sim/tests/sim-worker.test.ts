@@ -206,6 +206,8 @@ describe("sim-worker dispatch (unit)", () => {
       const v = dispatch({ cmd: "view", handle: battle.handle }).view;
       const mon = v.snapshot.sides[0].pokemon[0];
 
+      // Nature (from team set)
+      expect(mon.nature).toBe("Timid");
       // Status state defaults
       expect(mon.statusState).toEqual({ stage: null, time: null });
       // Item tracking
@@ -215,6 +217,17 @@ describe("sim-worker dispatch (unit)", () => {
       expect(mon.activeTurns).toBe(0);
       // Volatile details (empty at start)
       expect(mon.volatileDetails).toEqual({});
+    });
+
+    it("snapshot includes nature for every pokemon", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const v = dispatch({ cmd: "view", handle: battle.handle }).view;
+      for (const side of v.snapshot.sides) {
+        for (const mon of side.pokemon) {
+          expect(mon.nature).toBeTruthy();
+          expect(typeof mon.nature).toBe("string");
+        }
+      }
     });
 
     it("snapshot includes field duration fields", () => {
@@ -274,11 +287,10 @@ describe("sim-worker dispatch (unit)", () => {
         seed: [10, 20, 30, 40],
       });
 
-      // Drizzle should set rain
+      // Drizzle should set rain — engine emits lowercase status IDs
       const field = step.view.snapshot.field;
-      if (field.weather === "RainDance") {
-        expect(field.weatherDuration).not.toBeNull();
-      }
+      expect(field.weather).toBeTruthy();
+      expect(field.weatherDuration).not.toBeNull();
     });
 
     it("volatileDetails captures volatile state during battle", () => {

@@ -29,15 +29,15 @@ class TestSimClientLifecycle:
         # Create a battle and verify the returned handle and view
         handle, view = sim_client.new_battle(team_a, team_b, seed=[1, 2, 3, 4])
         assert isinstance(handle, int)
-        assert view["phase"] == "teamPreview"
-        assert view["terminal"] is False
+        assert view.phase == "teamPreview"
+        assert view.terminal is False
 
     def test_view_returns_state(self, sim_client: SimClient, team_a: list, team_b: list):
         # View an existing handle
         handle, _ = sim_client.new_battle(team_a, team_b, seed=[5, 6, 7, 8])
         view = sim_client.view(handle)
-        assert view["phase"] == "teamPreview"
-        assert len(view["snapshot"]["sides"]) == 2
+        assert view.phase == "teamPreview"
+        assert len(view.snapshot.sides) == 2
 
     def test_stats_counts_a_new_battle(self, sim_client: SimClient, team_a: list, team_b: list):
         # Order-independent: a new battle bumps the live handle count by exactly one.
@@ -62,19 +62,19 @@ class TestSearchSession:
         try:
             assert isinstance(session, int)
             assert isinstance(root, int)
-            assert view["phase"] == "teamPreview"
+            assert view.phase == "teamPreview"
 
             # Play the game to terminal using "default" auto-choices
             cur, steps = root, 0
-            while not view["terminal"] and steps < 200:
-                choices = {side: "default" for side in view["to_move"]}
+            while not view.terminal and steps < 200:
+                choices = dict.fromkeys(view.to_move, "default")
                 res = sim_client.step(cur, choices, seed=_rng_seed(rng))
                 cur, view = res["child"], res["view"]
                 steps += 1
 
             # Verify the game terminated properly
-            assert view["terminal"], f"Game did not terminate after {steps} steps"
-            assert view["utility"] in (
+            assert view.terminal, f"Game did not terminate after {steps} steps"
+            assert view.utility in (
                 {"p1": 1, "p2": -1},
                 {"p1": -1, "p2": 1},
                 {"p1": 0, "p2": 0},
@@ -91,9 +91,9 @@ class TestSearchSession:
         # Step a few times to accumulate handles
         cur = root
         for _ in range(3):
-            if view["terminal"]:
+            if view.terminal:
                 break
-            choices = {side: "default" for side in view["to_move"]}
+            choices = dict.fromkeys(view.to_move, "default")
             res = sim_client.step(cur, choices, seed=_rng_seed(rng))
             cur, view = res["child"], res["view"]
 
@@ -107,8 +107,8 @@ class TestSearchSession:
 
         # The live battle should still be accessible
         live_view = sim_client.view(live)
-        assert not live_view["terminal"]
-        assert live_view["phase"] == "teamPreview"
+        assert not live_view.terminal
+        assert live_view.phase == "teamPreview"
 
     def test_live_battle_untouched_by_search(self, sim_client: SimClient, team_a: list, team_b: list):
         """The live battle handle remains in teamPreview even after search clones advance."""
@@ -120,7 +120,7 @@ class TestSearchSession:
 
         # Live battle should be untouched
         live_view = sim_client.view(live)
-        assert live_view["phase"] == "teamPreview"
+        assert live_view.phase == "teamPreview"
 
         sim_client.close_search(session)
 

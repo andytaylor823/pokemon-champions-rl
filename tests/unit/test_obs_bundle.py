@@ -36,23 +36,23 @@ class TestMakeObsBundle:
     def test_all_keys_present(self):
         args = _make_dummy_bundle(12)
         bundle = make_obs_bundle(**args)
-        assert "entities" in bundle.keys()
-        assert "ids" in bundle.keys()
-        assert "belief_weight" in bundle.keys()
-        assert "slot_id" in bundle.keys()
-        assert "field" in bundle.keys()
-        assert "sides" in bundle.keys()
-        assert "scalars" in bundle.keys()
-        assert "action_mask" in bundle.keys()
-        assert "padding_mask" in bundle.keys()
+        assert "entities" in bundle
+        assert "ids" in bundle
+        assert "belief_weight" in bundle
+        assert "slot_id" in bundle
+        assert "field" in bundle
+        assert "sides" in bundle
+        assert "scalars" in bundle
+        assert "action_mask" in bundle
+        assert "padding_mask" in bundle
 
     def test_nested_ids_present(self):
         args = _make_dummy_bundle(12)
         bundle = make_obs_bundle(**args)
-        assert "species" in bundle["ids"].keys()
-        assert "ability" in bundle["ids"].keys()
-        assert "item" in bundle["ids"].keys()
-        assert "moves" in bundle["ids"].keys()
+        assert "species" in bundle["ids"]
+        assert "ability" in bundle["ids"]
+        assert "item" in bundle["ids"]
+        assert "moves" in bundle["ids"]
 
     def test_entity_shape(self):
         args = _make_dummy_bundle(12, f_dim=65)

@@ -63,6 +63,9 @@ indent-width = 4
 
 exclude = [
     "tests/*",
+    "scripts/*",
+    "toy_examples/*",
+    "src/meta_priors/*",
     "*.ipynb",
     ".git",
     ".venv",
@@ -125,6 +128,7 @@ ignore = [
     "B008",  # function calls in default args
     "B905",  # zip() without strict=
     "A002",  # shadowing builtins — common in framework callbacks
+    "S101",  # assert — used pervasively in tests & toy examples; not a web service
     "S603",  # subprocess call — scripts only invoke known local files
     "S311",  # pseudo-random — used for shuffling, not crypto
 ]

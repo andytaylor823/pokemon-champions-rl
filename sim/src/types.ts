@@ -33,6 +33,7 @@ export interface MoveSnapshot {
 
 export interface PokemonSnapshot {
   species: string | null;
+  nature: string | null;
   level: number;
   gender: string;
   hp: number;
@@ -55,9 +56,14 @@ export interface PokemonSnapshot {
   volatileDetails: Record<string, { duration?: number; time?: number; hp?: number; counter?: number }>;
 }
 
+export interface SideConditionSnapshot {
+  duration: number | null;
+  layers: number | null;
+}
+
 export interface SideSnapshot {
   id: string;
-  sideConditions: Record<string, number | null>;
+  sideConditions: Record<string, SideConditionSnapshot>;
   pokemon: PokemonSnapshot[];
 }
 

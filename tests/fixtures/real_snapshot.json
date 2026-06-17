@@ -1,0 +1,2098 @@
+{
+  "team_preview": {
+    "phase": "teamPreview",
+    "to_move": [
+      "p1",
+      "p2"
+    ],
+    "legal": {
+      "p1": {
+        "teamPreview": true,
+        "maxChosenTeamSize": 4,
+        "side": {
+          "name": "p1",
+          "id": "p1",
+          "pokemon": [
+            {
+              "ident": "p1: Charizard",
+              "details": "Charizard, L50, M",
+              "condition": "155/155",
+              "active": true,
+              "stats": {
+                "atk": 93,
+                "def": 98,
+                "spa": 161,
+                "spd": 105,
+                "spe": 167
+              },
+              "moves": [
+                "heatwave",
+                "protect",
+                "airslash",
+                "solarbeam"
+              ],
+              "baseAbility": "blaze",
+              "item": "charizarditey",
+              "pokeball": "pokeball",
+              "ability": "blaze",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Venusaur",
+              "details": "Venusaur, L50, F",
+              "condition": "157/157",
+              "active": true,
+              "stats": {
+                "atk": 91,
+                "def": 103,
+                "spa": 167,
+                "spd": 120,
+                "spe": 132
+              },
+              "moves": [
+                "protect",
+                "sleeppowder",
+                "gigadrain",
+                "sludgebomb"
+              ],
+              "baseAbility": "chlorophyll",
+              "item": "lumberry",
+              "pokeball": "pokeball",
+              "ability": "chlorophyll",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Garchomp",
+              "details": "Garchomp, L50, F",
+              "condition": "185/185",
+              "active": false,
+              "stats": {
+                "atk": 182,
+                "def": 115,
+                "spa": 90,
+                "spd": 105,
+                "spe": 169
+              },
+              "moves": [
+                "earthquake",
+                "dragonclaw",
+                "rockslide",
+                "protect"
+              ],
+              "baseAbility": "roughskin",
+              "item": "choicescarf",
+              "pokeball": "pokeball",
+              "ability": "roughskin",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Whimsicott",
+              "details": "Whimsicott, L50, M",
+              "condition": "167/167",
+              "active": false,
+              "stats": {
+                "atk": 78,
+                "def": 107,
+                "spa": 97,
+                "spd": 95,
+                "spe": 184
+              },
+              "moves": [
+                "tailwind",
+                "helpinghand",
+                "encore",
+                "protect"
+              ],
+              "baseAbility": "prankster",
+              "item": "mentalherb",
+              "pokeball": "pokeball",
+              "ability": "prankster",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Pelipper",
+              "details": "Pelipper, L50, F",
+              "condition": "167/167",
+              "active": false,
+              "stats": {
+                "atk": 63,
+                "def": 167,
+                "spa": 115,
+                "spd": 92,
+                "spe": 85
+              },
+              "moves": [
+                "hydropump",
+                "hurricane",
+                "tailwind",
+                "protect"
+              ],
+              "baseAbility": "drizzle",
+              "item": "wacanberry",
+              "pokeball": "pokeball",
+              "ability": "drizzle",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Incineroar",
+              "details": "Incineroar, L50, F",
+              "condition": "202/202",
+              "active": false,
+              "stats": {
+                "atk": 183,
+                "def": 110,
+                "spa": 90,
+                "spd": 112,
+                "spe": 80
+              },
+              "moves": [
+                "flareblitz",
+                "darkestlariat",
+                "fakeout",
+                "partingshot"
+              ],
+              "baseAbility": "intimidate",
+              "item": "sitrusberry",
+              "pokeball": "pokeball",
+              "ability": "intimidate",
+              "commanding": false,
+              "reviving": false
+            }
+          ]
+        }
+      },
+      "p2": {
+        "teamPreview": true,
+        "maxChosenTeamSize": 4,
+        "side": {
+          "name": "p2",
+          "id": "p2",
+          "pokemon": [
+            {
+              "ident": "p2: Corviknight",
+              "details": "Corviknight, L50, F",
+              "condition": "205/205",
+              "active": true,
+              "stats": {
+                "atk": 107,
+                "def": 127,
+                "spa": 65,
+                "spd": 150,
+                "spe": 87
+              },
+              "moves": [
+                "bravebird",
+                "tailwind",
+                "irondefense",
+                "roost"
+              ],
+              "baseAbility": "pressure",
+              "item": "leftovers",
+              "pokeball": "pokeball",
+              "ability": "pressure",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Meganium",
+              "details": "Meganium, L50, M",
+              "condition": "187/187",
+              "active": true,
+              "stats": {
+                "atk": 91,
+                "def": 167,
+                "spa": 103,
+                "spd": 122,
+                "spe": 100
+              },
+              "moves": [
+                "bodypress",
+                "lightscreen",
+                "reflect",
+                "synthesis"
+              ],
+              "baseAbility": "overgrow",
+              "item": "meganiumite",
+              "pokeball": "pokeball",
+              "ability": "overgrow",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Sinistcha",
+              "details": "Sinistcha, L50",
+              "condition": "178/178",
+              "active": false,
+              "stats": {
+                "atk": 72,
+                "def": 173,
+                "spa": 141,
+                "spd": 102,
+                "spe": 90
+              },
+              "moves": [
+                "matchagotcha",
+                "ragepowder",
+                "trickroom",
+                "lifedew"
+              ],
+              "baseAbility": "hospitality",
+              "item": "focussash",
+              "pokeball": "pokeball",
+              "ability": "hospitality",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Kingambit",
+              "details": "Kingambit, L50, F",
+              "condition": "207/207",
+              "active": false,
+              "stats": {
+                "atk": 205,
+                "def": 142,
+                "spa": 72,
+                "spd": 105,
+                "spe": 70
+              },
+              "moves": [
+                "kowtowcleave",
+                "swordsdance",
+                "irondefense",
+                "suckerpunch"
+              ],
+              "baseAbility": "defiant",
+              "item": "chopleberry",
+              "pokeball": "pokeball",
+              "ability": "defiant",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Meowstic",
+              "details": "Meowstic, L50, M",
+              "condition": "181/181",
+              "active": false,
+              "stats": {
+                "atk": 61,
+                "def": 96,
+                "spa": 105,
+                "spd": 101,
+                "spe": 171
+              },
+              "moves": [
+                "psychic",
+                "lightscreen",
+                "reflect",
+                "helpinghand"
+              ],
+              "baseAbility": "prankster",
+              "item": "kasibberry",
+              "pokeball": "pokeball",
+              "ability": "prankster",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Talonflame",
+              "details": "Talonflame, L50, F",
+              "condition": "185/185",
+              "active": false,
+              "stats": {
+                "atk": 101,
+                "def": 93,
+                "spa": 84,
+                "spd": 89,
+                "spe": 195
+              },
+              "moves": [
+                "bravebird",
+                "roost",
+                "featherdance",
+                "bulkup"
+              ],
+              "baseAbility": "galewings",
+              "item": "sharpbeak",
+              "pokeball": "pokeball",
+              "ability": "galewings",
+              "commanding": false,
+              "reviving": false
+            }
+          ]
+        }
+      }
+    },
+    "snapshot": {
+      "turn": 0,
+      "field": {
+        "weather": null,
+        "weatherDuration": null,
+        "terrain": null,
+        "terrainDuration": null,
+        "pseudoWeather": {}
+      },
+      "sides": [
+        {
+          "id": "p1",
+          "sideConditions": {},
+          "pokemon": [
+            {
+              "species": "charizard",
+              "nature": "Timid",
+              "level": 50,
+              "gender": "M",
+              "hp": 155,
+              "maxhp": 155,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "blaze",
+              "item": "charizarditey",
+              "lastItem": null,
+              "active": false,
+              "position": 0,
+              "activeTurns": 0,
+              "teraType": "Fire",
+              "terastallized": null,
+              "stats": {
+                "hp": 155,
+                "atk": 93,
+                "def": 98,
+                "spa": 161,
+                "spd": 105,
+                "spe": 167
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "heatwave",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "airslash",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "solarbeam",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "venusaur",
+              "nature": "Modest",
+              "level": 50,
+              "gender": "F",
+              "hp": 157,
+              "maxhp": 157,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "chlorophyll",
+              "item": "lumberry",
+              "lastItem": null,
+              "active": false,
+              "position": 1,
+              "activeTurns": 0,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 157,
+                "atk": 91,
+                "def": 103,
+                "spa": 167,
+                "spd": 120,
+                "spe": 132
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "sleeppowder",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "gigadrain",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "sludgebomb",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "garchomp",
+              "nature": "Jolly",
+              "level": 50,
+              "gender": "F",
+              "hp": 185,
+              "maxhp": 185,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "roughskin",
+              "item": "choicescarf",
+              "lastItem": null,
+              "active": false,
+              "position": 2,
+              "activeTurns": 0,
+              "teraType": "Dragon",
+              "terastallized": null,
+              "stats": {
+                "hp": 185,
+                "atk": 182,
+                "def": 115,
+                "spa": 90,
+                "spd": 105,
+                "spe": 169
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "earthquake",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "dragonclaw",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "rockslide",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "whimsicott",
+              "nature": "Timid",
+              "level": 50,
+              "gender": "M",
+              "hp": 167,
+              "maxhp": 167,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "prankster",
+              "item": "mentalherb",
+              "lastItem": null,
+              "active": false,
+              "position": 3,
+              "activeTurns": 0,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 167,
+                "atk": 78,
+                "def": 107,
+                "spa": 97,
+                "spd": 95,
+                "spe": 184
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "tailwind",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "helpinghand",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "encore",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "pelipper",
+              "nature": "Bold",
+              "level": 50,
+              "gender": "F",
+              "hp": 167,
+              "maxhp": 167,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "drizzle",
+              "item": "wacanberry",
+              "lastItem": null,
+              "active": false,
+              "position": 4,
+              "activeTurns": 0,
+              "teraType": "Water",
+              "terastallized": null,
+              "stats": {
+                "hp": 167,
+                "atk": 63,
+                "def": 167,
+                "spa": 115,
+                "spd": 92,
+                "spe": 85
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "hydropump",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "hurricane",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "tailwind",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "incineroar",
+              "nature": "Adamant",
+              "level": 50,
+              "gender": "F",
+              "hp": 202,
+              "maxhp": 202,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "intimidate",
+              "item": "sitrusberry",
+              "lastItem": null,
+              "active": false,
+              "position": 5,
+              "activeTurns": 0,
+              "teraType": "Fire",
+              "terastallized": null,
+              "stats": {
+                "hp": 202,
+                "atk": 183,
+                "def": 110,
+                "spa": 90,
+                "spd": 112,
+                "spe": 80
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "flareblitz",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "darkestlariat",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "fakeout",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "partingshot",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "sideConditions": {},
+          "pokemon": [
+            {
+              "species": "corviknight",
+              "nature": "Careful",
+              "level": 50,
+              "gender": "F",
+              "hp": 205,
+              "maxhp": 205,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "pressure",
+              "item": "leftovers",
+              "lastItem": null,
+              "active": false,
+              "position": 0,
+              "activeTurns": 0,
+              "teraType": "Flying",
+              "terastallized": null,
+              "stats": {
+                "hp": 205,
+                "atk": 107,
+                "def": 127,
+                "spa": 65,
+                "spd": 150,
+                "spe": 87
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "bravebird",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "tailwind",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "irondefense",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "roost",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "meganium",
+              "nature": "Bold",
+              "level": 50,
+              "gender": "M",
+              "hp": 187,
+              "maxhp": 187,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "overgrow",
+              "item": "meganiumite",
+              "lastItem": null,
+              "active": false,
+              "position": 1,
+              "activeTurns": 0,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 187,
+                "atk": 91,
+                "def": 167,
+                "spa": 103,
+                "spd": 122,
+                "spe": 100
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "bodypress",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "lightscreen",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "reflect",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "synthesis",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "sinistcha",
+              "nature": "Bold",
+              "level": 50,
+              "gender": "",
+              "hp": 178,
+              "maxhp": 178,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "hospitality",
+              "item": "focussash",
+              "lastItem": null,
+              "active": false,
+              "position": 2,
+              "activeTurns": 0,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 178,
+                "atk": 72,
+                "def": 173,
+                "spa": 141,
+                "spd": 102,
+                "spe": 90
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "matchagotcha",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "ragepowder",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "trickroom",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "lifedew",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "kingambit",
+              "nature": "Adamant",
+              "level": 50,
+              "gender": "F",
+              "hp": 207,
+              "maxhp": 207,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "defiant",
+              "item": "chopleberry",
+              "lastItem": null,
+              "active": false,
+              "position": 3,
+              "activeTurns": 0,
+              "teraType": "Dark",
+              "terastallized": null,
+              "stats": {
+                "hp": 207,
+                "atk": 205,
+                "def": 142,
+                "spa": 72,
+                "spd": 105,
+                "spe": 70
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "kowtowcleave",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "swordsdance",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "irondefense",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "suckerpunch",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "meowstic",
+              "nature": "Timid",
+              "level": 50,
+              "gender": "M",
+              "hp": 181,
+              "maxhp": 181,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "prankster",
+              "item": "kasibberry",
+              "lastItem": null,
+              "active": false,
+              "position": 4,
+              "activeTurns": 0,
+              "teraType": "Psychic",
+              "terastallized": null,
+              "stats": {
+                "hp": 181,
+                "atk": 61,
+                "def": 96,
+                "spa": 105,
+                "spd": 101,
+                "spe": 171
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "psychic",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "lightscreen",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "reflect",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "helpinghand",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "talonflame",
+              "nature": "Jolly",
+              "level": 50,
+              "gender": "F",
+              "hp": 185,
+              "maxhp": 185,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "galewings",
+              "item": "sharpbeak",
+              "lastItem": null,
+              "active": false,
+              "position": 5,
+              "activeTurns": 0,
+              "teraType": "Fire",
+              "terastallized": null,
+              "stats": {
+                "hp": 185,
+                "atk": 101,
+                "def": 93,
+                "spa": 84,
+                "spd": 89,
+                "spe": 195
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "bravebird",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "roost",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "featherdance",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "bulkup",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            }
+          ]
+        }
+      ]
+    },
+    "terminal": false,
+    "utility": null
+  },
+  "move_phase": {
+    "phase": "move",
+    "to_move": [
+      "p1",
+      "p2"
+    ],
+    "legal": {
+      "p1": {
+        "active": [
+          {
+            "moves": [
+              {
+                "move": "Heat Wave",
+                "id": "heatwave",
+                "pp": 12,
+                "maxpp": 12,
+                "target": "allAdjacentFoes",
+                "disabled": false
+              },
+              {
+                "move": "Protect",
+                "id": "protect",
+                "pp": 8,
+                "maxpp": 8,
+                "target": "self",
+                "disabled": false
+              },
+              {
+                "move": "Air Slash",
+                "id": "airslash",
+                "pp": 16,
+                "maxpp": 16,
+                "target": "any",
+                "disabled": false
+              },
+              {
+                "move": "Solar Beam",
+                "id": "solarbeam",
+                "pp": 12,
+                "maxpp": 12,
+                "target": "normal",
+                "disabled": false
+              }
+            ],
+            "canMegaEvo": true
+          },
+          {
+            "moves": [
+              {
+                "move": "Protect",
+                "id": "protect",
+                "pp": 8,
+                "maxpp": 8,
+                "target": "self",
+                "disabled": false
+              },
+              {
+                "move": "Sleep Powder",
+                "id": "sleeppowder",
+                "pp": 16,
+                "maxpp": 16,
+                "target": "normal",
+                "disabled": false
+              },
+              {
+                "move": "Giga Drain",
+                "id": "gigadrain",
+                "pp": 12,
+                "maxpp": 12,
+                "target": "normal",
+                "disabled": false
+              },
+              {
+                "move": "Sludge Bomb",
+                "id": "sludgebomb",
+                "pp": 12,
+                "maxpp": 12,
+                "target": "normal",
+                "disabled": false
+              }
+            ]
+          }
+        ],
+        "side": {
+          "name": "p1",
+          "id": "p1",
+          "pokemon": [
+            {
+              "ident": "p1: Charizard",
+              "details": "Charizard, L50, M",
+              "condition": "155/155",
+              "active": true,
+              "stats": {
+                "atk": 93,
+                "def": 98,
+                "spa": 161,
+                "spd": 105,
+                "spe": 167
+              },
+              "moves": [
+                "heatwave",
+                "protect",
+                "airslash",
+                "solarbeam"
+              ],
+              "baseAbility": "blaze",
+              "item": "charizarditey",
+              "pokeball": "pokeball",
+              "ability": "blaze",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Venusaur",
+              "details": "Venusaur, L50, F",
+              "condition": "157/157",
+              "active": true,
+              "stats": {
+                "atk": 91,
+                "def": 103,
+                "spa": 167,
+                "spd": 120,
+                "spe": 132
+              },
+              "moves": [
+                "protect",
+                "sleeppowder",
+                "gigadrain",
+                "sludgebomb"
+              ],
+              "baseAbility": "chlorophyll",
+              "item": "lumberry",
+              "pokeball": "pokeball",
+              "ability": "chlorophyll",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Garchomp",
+              "details": "Garchomp, L50, F",
+              "condition": "185/185",
+              "active": false,
+              "stats": {
+                "atk": 182,
+                "def": 115,
+                "spa": 90,
+                "spd": 105,
+                "spe": 169
+              },
+              "moves": [
+                "earthquake",
+                "dragonclaw",
+                "rockslide",
+                "protect"
+              ],
+              "baseAbility": "roughskin",
+              "item": "choicescarf",
+              "pokeball": "pokeball",
+              "ability": "roughskin",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p1: Whimsicott",
+              "details": "Whimsicott, L50, M",
+              "condition": "167/167",
+              "active": false,
+              "stats": {
+                "atk": 78,
+                "def": 107,
+                "spa": 97,
+                "spd": 95,
+                "spe": 184
+              },
+              "moves": [
+                "tailwind",
+                "helpinghand",
+                "encore",
+                "protect"
+              ],
+              "baseAbility": "prankster",
+              "item": "mentalherb",
+              "pokeball": "pokeball",
+              "ability": "prankster",
+              "commanding": false,
+              "reviving": false
+            }
+          ]
+        }
+      },
+      "p2": {
+        "active": [
+          {
+            "moves": [
+              {
+                "move": "Brave Bird",
+                "id": "bravebird",
+                "pp": 16,
+                "maxpp": 16,
+                "target": "any",
+                "disabled": false
+              },
+              {
+                "move": "Tailwind",
+                "id": "tailwind",
+                "pp": 16,
+                "maxpp": 16,
+                "target": "allySide",
+                "disabled": false
+              },
+              {
+                "move": "Iron Defense",
+                "id": "irondefense",
+                "pp": 16,
+                "maxpp": 16,
+                "target": "self",
+                "disabled": false
+              },
+              {
+                "move": "Roost",
+                "id": "roost",
+                "pp": 8,
+                "maxpp": 8,
+                "target": "self",
+                "disabled": false
+              }
+            ]
+          },
+          {
+            "moves": [
+              {
+                "move": "Body Press",
+                "id": "bodypress",
+                "pp": 12,
+                "maxpp": 12,
+                "target": "normal",
+                "disabled": false
+              },
+              {
+                "move": "Light Screen",
+                "id": "lightscreen",
+                "pp": 20,
+                "maxpp": 20,
+                "target": "allySide",
+                "disabled": false
+              },
+              {
+                "move": "Reflect",
+                "id": "reflect",
+                "pp": 20,
+                "maxpp": 20,
+                "target": "allySide",
+                "disabled": false
+              },
+              {
+                "move": "Synthesis",
+                "id": "synthesis",
+                "pp": 8,
+                "maxpp": 8,
+                "target": "self",
+                "disabled": false
+              }
+            ],
+            "canMegaEvo": true
+          }
+        ],
+        "side": {
+          "name": "p2",
+          "id": "p2",
+          "pokemon": [
+            {
+              "ident": "p2: Corviknight",
+              "details": "Corviknight, L50, F",
+              "condition": "205/205",
+              "active": true,
+              "stats": {
+                "atk": 107,
+                "def": 127,
+                "spa": 65,
+                "spd": 150,
+                "spe": 87
+              },
+              "moves": [
+                "bravebird",
+                "tailwind",
+                "irondefense",
+                "roost"
+              ],
+              "baseAbility": "pressure",
+              "item": "leftovers",
+              "pokeball": "pokeball",
+              "ability": "pressure",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Meganium",
+              "details": "Meganium, L50, M",
+              "condition": "187/187",
+              "active": true,
+              "stats": {
+                "atk": 91,
+                "def": 167,
+                "spa": 103,
+                "spd": 122,
+                "spe": 100
+              },
+              "moves": [
+                "bodypress",
+                "lightscreen",
+                "reflect",
+                "synthesis"
+              ],
+              "baseAbility": "overgrow",
+              "item": "meganiumite",
+              "pokeball": "pokeball",
+              "ability": "overgrow",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Sinistcha",
+              "details": "Sinistcha, L50",
+              "condition": "178/178",
+              "active": false,
+              "stats": {
+                "atk": 72,
+                "def": 173,
+                "spa": 141,
+                "spd": 102,
+                "spe": 90
+              },
+              "moves": [
+                "matchagotcha",
+                "ragepowder",
+                "trickroom",
+                "lifedew"
+              ],
+              "baseAbility": "hospitality",
+              "item": "focussash",
+              "pokeball": "pokeball",
+              "ability": "hospitality",
+              "commanding": false,
+              "reviving": false
+            },
+            {
+              "ident": "p2: Kingambit",
+              "details": "Kingambit, L50, F",
+              "condition": "207/207",
+              "active": false,
+              "stats": {
+                "atk": 205,
+                "def": 142,
+                "spa": 72,
+                "spd": 105,
+                "spe": 70
+              },
+              "moves": [
+                "kowtowcleave",
+                "swordsdance",
+                "irondefense",
+                "suckerpunch"
+              ],
+              "baseAbility": "defiant",
+              "item": "chopleberry",
+              "pokeball": "pokeball",
+              "ability": "defiant",
+              "commanding": false,
+              "reviving": false
+            }
+          ]
+        }
+      }
+    },
+    "snapshot": {
+      "turn": 1,
+      "field": {
+        "weather": null,
+        "weatherDuration": null,
+        "terrain": null,
+        "terrainDuration": null,
+        "pseudoWeather": {}
+      },
+      "sides": [
+        {
+          "id": "p1",
+          "sideConditions": {},
+          "pokemon": [
+            {
+              "species": "charizard",
+              "nature": "Timid",
+              "level": 50,
+              "gender": "M",
+              "hp": 155,
+              "maxhp": 155,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "blaze",
+              "item": "charizarditey",
+              "lastItem": null,
+              "active": true,
+              "position": 0,
+              "activeTurns": 1,
+              "teraType": "Fire",
+              "terastallized": null,
+              "stats": {
+                "hp": 155,
+                "atk": 93,
+                "def": 98,
+                "spa": 161,
+                "spd": 105,
+                "spe": 167
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "heatwave",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "airslash",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "solarbeam",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "venusaur",
+              "nature": "Modest",
+              "level": 50,
+              "gender": "F",
+              "hp": 157,
+              "maxhp": 157,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "chlorophyll",
+              "item": "lumberry",
+              "lastItem": null,
+              "active": true,
+              "position": 1,
+              "activeTurns": 1,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 157,
+                "atk": 91,
+                "def": 103,
+                "spa": 167,
+                "spd": 120,
+                "spe": 132
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "sleeppowder",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "gigadrain",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "sludgebomb",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "garchomp",
+              "nature": "Jolly",
+              "level": 50,
+              "gender": "F",
+              "hp": 185,
+              "maxhp": 185,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "roughskin",
+              "item": "choicescarf",
+              "lastItem": null,
+              "active": false,
+              "position": 2,
+              "activeTurns": 0,
+              "teraType": "Dragon",
+              "terastallized": null,
+              "stats": {
+                "hp": 185,
+                "atk": 182,
+                "def": 115,
+                "spa": 90,
+                "spd": 105,
+                "spe": 169
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "earthquake",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "dragonclaw",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "rockslide",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "whimsicott",
+              "nature": "Timid",
+              "level": 50,
+              "gender": "M",
+              "hp": 167,
+              "maxhp": 167,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "prankster",
+              "item": "mentalherb",
+              "lastItem": null,
+              "active": false,
+              "position": 3,
+              "activeTurns": 0,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 167,
+                "atk": 78,
+                "def": 107,
+                "spa": 97,
+                "spd": 95,
+                "spe": 184
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "tailwind",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "helpinghand",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "encore",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "protect",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "sideConditions": {},
+          "pokemon": [
+            {
+              "species": "corviknight",
+              "nature": "Careful",
+              "level": 50,
+              "gender": "F",
+              "hp": 205,
+              "maxhp": 205,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "pressure",
+              "item": "leftovers",
+              "lastItem": null,
+              "active": true,
+              "position": 0,
+              "activeTurns": 1,
+              "teraType": "Flying",
+              "terastallized": null,
+              "stats": {
+                "hp": 205,
+                "atk": 107,
+                "def": 127,
+                "spa": 65,
+                "spd": 150,
+                "spe": 87
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "bravebird",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "tailwind",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "irondefense",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "roost",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "meganium",
+              "nature": "Bold",
+              "level": 50,
+              "gender": "M",
+              "hp": 187,
+              "maxhp": 187,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "overgrow",
+              "item": "meganiumite",
+              "lastItem": null,
+              "active": true,
+              "position": 1,
+              "activeTurns": 1,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 187,
+                "atk": 91,
+                "def": 167,
+                "spa": 103,
+                "spd": 122,
+                "spe": 100
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "bodypress",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "lightscreen",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "reflect",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "synthesis",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "sinistcha",
+              "nature": "Bold",
+              "level": 50,
+              "gender": "",
+              "hp": 178,
+              "maxhp": 178,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "hospitality",
+              "item": "focussash",
+              "lastItem": null,
+              "active": false,
+              "position": 2,
+              "activeTurns": 0,
+              "teraType": "Grass",
+              "terastallized": null,
+              "stats": {
+                "hp": 178,
+                "atk": 72,
+                "def": 173,
+                "spa": 141,
+                "spd": 102,
+                "spe": 90
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "matchagotcha",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "ragepowder",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "trickroom",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                },
+                {
+                  "id": "lifedew",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            },
+            {
+              "species": "kingambit",
+              "nature": "Adamant",
+              "level": 50,
+              "gender": "F",
+              "hp": 207,
+              "maxhp": 207,
+              "fainted": false,
+              "status": null,
+              "statusState": {
+                "stage": null,
+                "time": null
+              },
+              "ability": "defiant",
+              "item": "chopleberry",
+              "lastItem": null,
+              "active": false,
+              "position": 3,
+              "activeTurns": 0,
+              "teraType": "Dark",
+              "terastallized": null,
+              "stats": {
+                "hp": 207,
+                "atk": 205,
+                "def": 142,
+                "spa": 72,
+                "spd": 105,
+                "spe": 70
+              },
+              "boosts": {
+                "atk": 0,
+                "def": 0,
+                "spa": 0,
+                "spd": 0,
+                "spe": 0,
+                "accuracy": 0,
+                "evasion": 0
+              },
+              "moves": [
+                {
+                  "id": "kowtowcleave",
+                  "pp": 12,
+                  "maxpp": 12,
+                  "disabled": false
+                },
+                {
+                  "id": "swordsdance",
+                  "pp": 20,
+                  "maxpp": 20,
+                  "disabled": false
+                },
+                {
+                  "id": "irondefense",
+                  "pp": 16,
+                  "maxpp": 16,
+                  "disabled": false
+                },
+                {
+                  "id": "suckerpunch",
+                  "pp": 8,
+                  "maxpp": 8,
+                  "disabled": false
+                }
+              ],
+              "volatiles": [],
+              "volatileDetails": {}
+            }
+          ]
+        }
+      ]
+    },
+    "terminal": false,
+    "utility": null
+  }
+}

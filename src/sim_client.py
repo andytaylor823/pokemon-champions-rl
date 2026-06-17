@@ -16,10 +16,13 @@ Integration tests live in tests/integration/test_sim_client.py.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
+from state_types import StateView
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SIM_DIR = REPO_ROOT / "sim"
@@ -41,7 +44,7 @@ class SimClient:
         inherit_stderr: bool = False,
     ) -> None:
         self._proc = subprocess.Popen(
-            ["npx", "tsx", "src/sim-worker.ts"],
+            ["npx", "tsx", "src/sim-worker.ts"],  # noqa: S607
             cwd=str(sim_dir),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -72,23 +75,33 @@ class SimClient:
             raise SimError(resp.get("error", "unknown worker error"))
         return resp
 
+    # --- helpers -----------------------------------------------------------
+    @staticmethod
+    def _parse_view(raw: dict) -> StateView:
+        """Validate a raw view dict against the Pydantic contract."""
+        return StateView.model_validate(raw)
+
     # --- commands ----------------------------------------------------------
     def config(self, format_id: str) -> str:
         return self._rpc("config", format_id=format_id)["format_id"]
 
-    def new_battle(self, team_a: list, team_b: list, seed: Optional[Seed] = None) -> tuple[int, dict]:
+    def new_battle(self, team_a: list, team_b: list, seed: Seed | None = None) -> tuple[int, StateView]:
         r = self._rpc("new_battle", team_a=team_a, team_b=team_b, seed=seed)
-        return r["handle"], r["view"]
+        return r["handle"], self._parse_view(r["view"])
 
-    def open_search(self, from_handle: Optional[int] = None) -> tuple[int, Optional[int], Optional[dict]]:
+    def open_search(self, from_handle: int | None = None) -> tuple[int, int | None, StateView | None]:
         r = self._rpc("open_search", **({"from": from_handle} if from_handle is not None else {}))
-        return r["session"], r["root"], r["root_view"]
+        root_view = self._parse_view(r["root_view"]) if r["root_view"] is not None else None
+        return r["session"], r["root"], root_view
 
     def step(self, handle: int, choices: dict[Side, str], seed: Seed) -> dict:
-        return self._rpc("step", handle=handle, choices=choices, seed=seed)
+        r = self._rpc("step", handle=handle, choices=choices, seed=seed)
+        # Parse the embedded view while leaving child handle + outcome as-is
+        r["view"] = self._parse_view(r["view"])
+        return r
 
-    def view(self, handle: int) -> dict:
-        return self._rpc("view", handle=handle)["view"]
+    def view(self, handle: int) -> StateView:
+        return self._parse_view(self._rpc("view", handle=handle)["view"])
 
     def release(self, handle: int) -> None:
         self._rpc("release", handle=handle)
@@ -100,16 +113,14 @@ class SimClient:
         return self._rpc("stats")
 
     def close(self) -> None:
-        try:
+        with contextlib.suppress(SimError):
             self._rpc("close")
-        except SimError:
-            pass
         try:
             self._proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             self._proc.kill()
 
-    def __enter__(self) -> "SimClient":
+    def __enter__(self) -> SimClient:
         return self
 
     def __exit__(self, *exc: Any) -> None:

@@ -26,27 +26,27 @@ import torch.nn as nn
 import torch.optim as optim
 from pydantic import BaseModel, Field
 
+from toy_examples.leduc_poker.exploitability import Strategy, compute_exploitability
 from toy_examples.leduc_poker.game import (
-    RANKS,
-    SUITS_PER_RANK,
     PLAYER_1,
     PLAYER_2,
+    RANKS,
+    SUITS_PER_RANK,
     LeducState,
+    actions_at_info_set,
     all_deals,
     all_info_set_keys,
-    actions_at_info_set,
-    community_outcomes,
     card_rank,
+    community_outcomes,
 )
+from toy_examples.leduc_poker.gt_cfr_search import gt_cfr_search
 from toy_examples.leduc_poker.network import (
+    NUM_ACTIONS,
+    NUM_PRIVATE_STATES,
     LeducCVPN,
     encode_public_state,
     get_policy_for_info_set,
-    NUM_ACTIONS,
-    NUM_PRIVATE_STATES,
 )
-from toy_examples.leduc_poker.gt_cfr_search import gt_cfr_search
-from toy_examples.leduc_poker.exploitability import compute_exploitability, Strategy
 
 
 class TrainingTuple(BaseModel):
@@ -443,7 +443,7 @@ class SelfPlayTrainer:
             for key in _KEY_INFO_SETS[:2]:
                 if key in log.strategy_snapshot:
                     probs = log.strategy_snapshot[key]
-                    first_action = list(probs.keys())[0]
+                    first_action = next(iter(probs))
                     parts.append(f"{key}{first_action}={probs[first_action]:.2f}")
         print(" | ".join(parts))
 
@@ -493,10 +493,7 @@ class SelfPlayTrainer:
             acting_player = state.current_player()
             info_key = state.info_set_key()
 
-            if acting_player == PLAYER_1:
-                action_probs = p1_strategy.get(info_key, None)
-            else:
-                action_probs = p2_strategy.get(info_key, None)
+            action_probs = p1_strategy.get(info_key, None) if acting_player == PLAYER_1 else p2_strategy.get(info_key, None)
 
             if action_probs is None:
                 actions = state.legal_actions()

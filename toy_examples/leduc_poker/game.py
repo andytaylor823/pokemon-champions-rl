@@ -102,9 +102,7 @@ def _round_over(round_actions: tuple[str, ...]) -> bool:
     if len(round_actions) >= 2 and round_actions[-1] == CHECK and round_actions[-2] == CHECK:
         return True
     # Any sequence ending in CALL after at least one bet/raise completes the round
-    if round_actions[-1] == CALL and _has_bet(round_actions):
-        return True
-    return False
+    return round_actions[-1] == CALL and _has_bet(round_actions)
 
 
 def _has_bet(round_actions: tuple[str, ...]) -> bool:
@@ -120,9 +118,9 @@ def _count_raises(round_actions: tuple[str, ...]) -> int:
 def _current_bet_increment(round_actions: tuple[str, ...]) -> int:
     """Return the chip increment of the last bet/raise in this round (0 if none)."""
     for a in reversed(round_actions):
-        if a == BET_SMALL or a == RAISE_SMALL:
+        if a in (BET_SMALL, RAISE_SMALL):
             return _small_bet_for_round_actions(round_actions)
-        if a == BET_BIG or a == RAISE_BIG:
+        if a in (BET_BIG, RAISE_BIG):
             return _big_bet_for_round_actions(round_actions)
     return 0
 
@@ -211,10 +209,7 @@ class LeducState:
             return CHANCE
         # Determine who acts based on the current round's action count
         current_round = self.game_round()
-        if current_round == 1:
-            round_actions = self.round_split()[0]
-        else:
-            round_actions = self.round_split()[1]
+        round_actions = self.round_split()[0] if current_round == 1 else self.round_split()[1]
         # P1 acts first each round; players alternate
         return PLAYER_1 if len(round_actions) % 2 == 0 else PLAYER_2
 
@@ -272,7 +267,7 @@ class LeducState:
         return LeducState(
             cards=self.cards,
             community_card=self.community_card,
-            history=self.history + (action,),
+            history=(*self.history, action),
             pot=new_pot,
         )
 
@@ -298,34 +293,28 @@ class LeducState:
         bet_sizes = ROUND1_BET_SIZES if current_round == 1 else ROUND2_BET_SIZES
         small_inc, big_inc = (bet_sizes[0], bet_sizes[-1])
 
-        if action == CHECK:
+        if action in (CHECK, FOLD):
             return (p1, p2)
-        elif action == FOLD:
-            return (p1, p2)
-        elif action == CALL:
+        if action == CALL:
             # Match opponent's commitment
             if player == PLAYER_1:
                 return (p2, p2)  # P1 matches P2
-            else:
-                return (p1, p1)  # P2 matches P1
-        elif action in (BET_SMALL, RAISE_SMALL):
+            return (p1, p1)  # P2 matches P1
+        if action in (BET_SMALL, RAISE_SMALL):
             # Add small increment on top of matching
             opponent_pot = p2 if player == PLAYER_1 else p1
             new_commitment = opponent_pot + small_inc
             if player == PLAYER_1:
                 return (new_commitment, p2)
-            else:
-                return (p1, new_commitment)
-        elif action in (BET_BIG, RAISE_BIG):
+            return (p1, new_commitment)
+        if action in (BET_BIG, RAISE_BIG):
             # Add big increment on top of matching
             opponent_pot = p2 if player == PLAYER_1 else p1
             new_commitment = opponent_pot + big_inc
             if player == PLAYER_1:
                 return (new_commitment, p2)
-            else:
-                return (p1, new_commitment)
-        else:
-            raise ValueError(f"Unknown action: {action}")
+            return (p1, new_commitment)
+        raise ValueError(f"Unknown action: {action}")
 
     # ------------------------------------------------------------------
     # Terminal utility
@@ -357,12 +346,12 @@ class LeducState:
         # Compute payoff: winner gets the whole pot minus what they put in
         if player == winner:
             return float(total_pot - self.pot[player])
-        else:
-            return float(-self.pot[player])
+        return float(-self.pot[player])
 
     def _showdown_winner(self) -> int:
         """Determine winner at showdown (pair beats no pair, else higher card)."""
-        assert self.cards is not None and self.community_card is not None
+        assert self.cards is not None
+        assert self.community_card is not None
 
         p1_rank = card_rank_index(self.cards[0])
         p2_rank = card_rank_index(self.cards[1])
@@ -421,11 +410,13 @@ def all_deals() -> list[LeducState]:
     Enumerate all ordered deals (p1_card, p2_card) from the 6-card deck.
     P(6,2) = 30 deals, each with probability 1/30.
     """
-    deals = []
+    deals: list[LeducState] = []
     for p1 in range(DECK_SIZE):
-        for p2 in range(DECK_SIZE):
-            if p1 != p2:
-                deals.append(LeducState(cards=(p1, p2)))
+        deals.extend(
+            LeducState(cards=(p1, p2))
+            for p2 in range(DECK_SIZE)
+            if p1 != p2
+        )
     return deals
 
 

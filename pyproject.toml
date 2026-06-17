@@ -12,6 +12,7 @@ dependencies = [
     "ray[rllib]",
     "poke-env",
     "torch",
+    "tensordict",
     "numpy",
     "gymnasium",
     "tensorboard",
@@ -42,7 +43,7 @@ markers = [
 # them without any sys.path manipulation in the tests.
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["sim_client"]
+py-modules = ["sim_client", "action_space", "vocab", "obs_bundle", "encoder"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -62,6 +63,9 @@ indent-width = 4
 
 exclude = [
     "tests/*",
+    "scripts/*",
+    "toy_examples/*",
+    "src/meta_priors/*",
     "*.ipynb",
     ".git",
     ".venv",
@@ -124,9 +128,10 @@ ignore = [
     "B008",  # function calls in default args
     "B905",  # zip() without strict=
     "A002",  # shadowing builtins — common in framework callbacks
+    "S101",  # assert — used pervasively in tests & toy examples; not a web service
     "S603",  # subprocess call — scripts only invoke known local files
     "S311",  # pseudo-random — used for shuffling, not crypto
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["meta_priors", "sim_client", "scripts", "toy_examples"]
+known-first-party = ["meta_priors", "sim_client", "action_space", "vocab", "obs_bundle", "encoder", "scripts", "toy_examples"]

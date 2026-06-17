@@ -16,14 +16,14 @@ Architecture: 2-layer MLP with 128 hidden units. Input encodes:
 
 from __future__ import annotations
 
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
+import torch.nn.functional as F  # noqa: N812
 
 from toy_examples.leduc_poker.game import (
-    RANKS,
     ALL_ACTIONS,
+    RANKS,
     LeducState,
     card_rank_index,
 )
@@ -183,7 +183,7 @@ def get_policy_for_info_set(
 
     # Mask illegal action slots to -inf
     masked_logits = torch.full_like(logits, float("-inf"))
-    for i, action in enumerate(legal_actions):
+    for i, _action in enumerate(legal_actions):
         if i < NUM_ACTIONS:
             masked_logits[i] = logits[i]
 

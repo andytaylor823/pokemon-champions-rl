@@ -106,9 +106,11 @@ def check_pokemon(species: str, item: str, moves: list[str]) -> list[str]:
         errors.append(f"WARNING: no learnset found for {species!r}, cannot validate moves")
     else:
         moveset = _NORM_LEARNSETS[lk]
-        for move in moves:
-            if move.lower() not in moveset:
-                errors.append(f"ILLEGAL move: {move!r} (not in {species}'s learnset)")
+        errors.extend(
+            f"ILLEGAL move: {move!r} (not in {species}'s learnset)"
+            for move in moves
+            if move.lower() not in moveset
+        )
 
     return errors
 
@@ -130,13 +132,13 @@ def parse_showdown_paste(text: str) -> list[dict]:
                 current["moves"].append(line[2:].strip())
             continue
 
-        if line.startswith("Ability:") or line.startswith("Level:"):
+        if line.startswith(("Ability:", "Level:")):
             continue
         if "Nature" in line and not line.startswith("- "):
             continue
-        if line.startswith("EVs:") or line.startswith("IVs:"):
+        if line.startswith(("EVs:", "IVs:")):
             continue
-        if line.startswith("Shiny:") or line.startswith("Happiness:"):
+        if line.startswith(("Shiny:", "Happiness:")):
             continue
 
         if "@" in line:
@@ -162,7 +164,7 @@ def check_team(team: list[dict]) -> bool:
     species_seen: list[str] = []
     items_seen: list[str] = []
 
-    for i, mon in enumerate(team, 1):
+    for _i, mon in enumerate(team, 1):
         species = mon["species"]
         item = mon.get("item", "")
         moves = mon.get("moves", [])

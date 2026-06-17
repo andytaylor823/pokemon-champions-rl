@@ -70,3 +70,8 @@ During a battle, the agent cannot see:
 - **Do NOT reimplement battle rules** — always use Showdown's engine as source of truth
 
 See `theory-reference.mdc` (algorithmic theory pointer), `paper-index.mdc` (Player of Games paper reference).
+
+## Python Coding Conventions
+
+- **Prefer `@dataclass(frozen=True)` over Pydantic `BaseModel`** for internal data structures. Pydantic's runtime type-checking adds measurable overhead on hot paths (search nodes, mask construction, tensor encoding). Reserve Pydantic for **wire boundaries** where untrusted external data needs validation (e.g. `SimClient` parsing raw JSON from the worker, `StepResult`, `StateView`). For everything else — action models, internal structs, config objects — use frozen dataclasses or `NamedTuple`.
+- This notably disagrees with the user's personal cursor rule to prefer BaseModels over dataclasses. This repo-specific rule should be considered to override the personal rule.

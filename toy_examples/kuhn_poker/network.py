@@ -11,16 +11,16 @@ Kuhn to mirror how the real Pokemon system will work at scale.
 
 from __future__ import annotations
 
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
+import torch.nn.functional as F  # noqa: N812
 
 from toy_examples.kuhn_poker.game import (
-    CARDS,
     BET,
-    CHECK,
     CALL,
+    CARDS,
+    CHECK,
     FOLD,
 )
 

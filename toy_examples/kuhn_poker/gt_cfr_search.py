@@ -25,11 +25,11 @@ from toy_examples.kuhn_poker.game import (
     PLAYER_1,
     PLAYER_2,
     KuhnState,
-    is_terminal,
     current_player,
+    is_terminal,
     legal_actions,
-    terminal_utility,
     make_info_set_key,
+    terminal_utility,
 )
 from toy_examples.kuhn_poker.network import (
     KuhnCVPN,
@@ -52,7 +52,7 @@ class SearchNode:
     """
 
     history: tuple[str, ...]
-    children: dict[str, "SearchNode"] = field(default_factory=dict)
+    children: dict[str, SearchNode] = field(default_factory=dict)
     expanded: bool = False
     # Per-info-set CFR+ state
     cumulative_regret: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -110,7 +110,7 @@ def _expand_node(node: SearchNode, net: KuhnCVPN) -> None:
         return
     _evaluate_node(node, net)
     for action in legal_actions(node.history):
-        node.children[action] = SearchNode(history=node.history + (action,))
+        node.children[action] = SearchNode(history=(*node.history, action))
     node.expanded = True
 
 
@@ -184,11 +184,11 @@ def _cfr_traverse(
     # Update regrets and strategy sums at the traversing player's nodes
     if acting == traversing_player:
         if info_key not in node.cumulative_regret:
-            node.cumulative_regret[info_key] = {a: 0.0 for a in actions}
+            node.cumulative_regret[info_key] = dict.fromkeys(actions, 0.0)
         if info_key not in node.strategy_sum:
-            node.strategy_sum[info_key] = {a: 0.0 for a in actions}
+            node.strategy_sum[info_key] = dict.fromkeys(actions, 0.0)
         if info_key not in node.visit_counts:
-            node.visit_counts[info_key] = {a: 0 for a in actions}
+            node.visit_counts[info_key] = dict.fromkeys(actions, 0)
 
         # Counterfactual reach = opponent's reach contribution
         cf_reach = reach_p2 if traversing_player == PLAYER_1 else reach_p1

@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.optim as optim
 from pydantic import BaseModel, Field
 
+from toy_examples.kuhn_poker.exploitability import Strategy, compute_exploitability
 from toy_examples.kuhn_poker.game import (
     CARDS,
     PLAYER_1,
@@ -32,15 +33,14 @@ from toy_examples.kuhn_poker.game import (
     make_info_set_key,
     parse_info_set_key,
 )
+from toy_examples.kuhn_poker.gt_cfr_search import gt_cfr_search
 from toy_examples.kuhn_poker.network import (
+    NUM_ACTIONS,
+    NUM_CARDS,
     KuhnCVPN,
     encode_public_state,
     get_policy_for_info_set,
-    NUM_ACTIONS,
-    NUM_CARDS,
 )
-from toy_examples.kuhn_poker.gt_cfr_search import gt_cfr_search
-from toy_examples.kuhn_poker.exploitability import compute_exploitability, Strategy
 
 
 class TrainingTuple(BaseModel):
@@ -487,7 +487,7 @@ class SelfPlayTrainer:
             for key in ("K:", "J:", "J:bet"):
                 if key in log.strategy_snapshot:
                     probs = log.strategy_snapshot[key]
-                    first_action = list(probs.keys())[0]
+                    first_action = next(iter(probs))
                     parts.append(f"{key}→{first_action}={probs[first_action]:.2f}")
         print(" | ".join(parts))
 
@@ -532,10 +532,7 @@ class SelfPlayTrainer:
             info_key = state.info_set_key()
 
             # Pick the appropriate strategy
-            if acting_player == PLAYER_1:
-                action_probs = p1_strategy.get(info_key, None)
-            else:
-                action_probs = p2_strategy.get(info_key, None)
+            action_probs = p1_strategy.get(info_key, None) if acting_player == PLAYER_1 else p2_strategy.get(info_key, None)
 
             if action_probs is None:
                 # Fallback to uniform

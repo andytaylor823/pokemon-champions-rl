@@ -23,7 +23,6 @@ import re
 import sys
 from pathlib import Path
 
-
 # Titles for known transcripts (UUID -> (slug, display_title))
 KNOWN_TITLES: dict[str, tuple[str, str]] = {
     # b52b2ad3 is venv/pyproject setup, not RL theory -- excluded from relevant-only
@@ -31,7 +30,7 @@ KNOWN_TITLES: dict[str, tuple[str, str]] = {
     "dc2d3bfe-1734-478b-9bd1-3a0fccd0e6f4": ("mcts-strategy-for-pokemon", "MCTS Strategy for Pokemon"),
     "28098d4e-f344-4ce5-a05e-0c5d2a4e9348": ("state-encoding-and-gt-cfr-north-star", "State Encoding & GT-CFR North Star"),
     "fd219ba0-c42a-48e6-8fc2-d58f7f206e6d": ("pog-paper-parameters", "Player of Games Paper Parameters"),
-    "f112bffd-a0b3-4d0c-83b5-a5d14dccf778": ("gt-cfr-search-nn-interface", "GT-CFR Search–NN Interface"),
+    "f112bffd-a0b3-4d0c-83b5-a5d14dccf778": ("gt-cfr-search-nn-interface", "GT-CFR Search-NN Interface"),
     "686af863-60a5-4675-bb0f-30b405bc0cea": ("kuhn-poker-gt-cfr-build", "Kuhn Poker GT-CFR Build"),
     "4490bb54-bbfe-449d-b95c-2bea9c097e1b": ("leduc-poker-gt-cfr-build", "Leduc Poker GT-CFR Build"),
     "a7f6c182-1fda-4b02-a1e4-ecc48a5da659": ("correlated-meta-priors", "Correlated Meta Priors"),
@@ -144,11 +143,7 @@ def is_thinking_block(text: str) -> bool:
         return False
 
     # Check for thinking-starter patterns
-    for starter in THINKING_STARTERS:
-        if stripped.startswith(starter):
-            return True
-
-    return False
+    return any(stripped.startswith(starter) for starter in THINKING_STARTERS)
 
 
 def strip_trailing_thinking(text: str) -> str:
@@ -172,13 +167,7 @@ def strip_trailing_thinking(text: str) -> str:
             continue
         # Check if this paragraph is structured content (headers, code, tables, lists)
         has_structure = (
-            p.startswith("#")
-            or p.startswith("```")
-            or p.startswith("| ")
-            or p.startswith("- ")
-            or p.startswith("1. ")
-            or p.startswith("> ")
-            or p.startswith("$$")
+            p.startswith(("#", "```", "| ", "- ", "1. ", "> ", "$$"))
             or "```" in p
             or "| " in p
         )
@@ -458,7 +447,7 @@ def main() -> None:
             output_path = args.output_dir / output_name
             output_path.write_text(markdown, encoding="utf-8")
             print(f"  {jsonl_path.stem} -> {output_path}")
-        except Exception as e:
+        except Exception as e:  # noqa: PERF203
             print(f"  ERROR converting {jsonl_path}: {e}", file=sys.stderr)
 
     print(f"\nDone. {len(input_files)} transcript(s) converted to {args.output_dir}/")

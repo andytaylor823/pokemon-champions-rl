@@ -133,7 +133,7 @@ class KuhnState:
         return legal_actions(self.history)
 
     def apply_action(self, action: str) -> KuhnState:
-        return KuhnState(cards=self.cards, history=self.history + (action,))
+        return KuhnState(cards=self.cards, history=(*self.history, action))
 
     def terminal_utility(self, player: int) -> float:
         """Payoff for `player` at a terminal state."""

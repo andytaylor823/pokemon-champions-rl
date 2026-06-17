@@ -30,6 +30,7 @@ import type {
   BattleSnapshot,
   PokemonSnapshot,
   Side,
+  SideConditionSnapshot,
   SideSnapshot,
   StateView,
 } from "./types";
@@ -132,18 +133,37 @@ function utilityOf(battle: any): Record<Side, number> | null {
 
 /** A clean, JSON-safe omniscient snapshot built from live objects (v1). */
 function snapshotPokemon(p: any): PokemonSnapshot {
+  // Build volatile details: capture duration, time, hp, and counter for each volatile
+  const volatileDetails: Record<string, { duration?: number; time?: number; hp?: number; counter?: number }> = {};
+  for (const [id, vol] of Object.entries(p.volatiles ?? {})) {
+    const v = vol as any;
+    const detail: { duration?: number; time?: number; hp?: number; counter?: number } = {};
+    if (v.duration != null) detail.duration = v.duration;
+    if (v.time != null) detail.time = v.time;
+    if (v.hp != null) detail.hp = v.hp;
+    if (v.counter != null) detail.counter = v.counter;
+    volatileDetails[id] = detail;
+  }
+
   return {
     species: p.species?.id ?? null,
+    nature: p.set?.nature ?? null,
     level: p.level,
     gender: p.gender,
     hp: p.hp,
     maxhp: p.maxhp,
     fainted: p.fainted,
     status: p.status || null,
+    statusState: {
+      stage: p.statusState?.stage ?? null,
+      time: p.statusState?.time ?? null,
+    },
     ability: p.ability || null,
     item: p.item || null,
+    lastItem: p.lastItem || null,
     active: p.isActive,
     position: p.position,
+    activeTurns: p.activeTurns ?? 0,
     teraType: p.teraType ?? null,
     terastallized: p.terastallized ?? null,
     stats: { hp: p.maxhp, ...(p.storedStats ?? {}) },
@@ -152,13 +172,18 @@ function snapshotPokemon(p: any): PokemonSnapshot {
       id: m.id, pp: m.pp, maxpp: m.maxpp, disabled: !!m.disabled,
     })),
     volatiles: Object.keys(p.volatiles ?? {}),
+    volatileDetails,
   };
 }
 
 function snapshotSide(side: any): SideSnapshot {
-  const conds: Record<string, number | null> = {};
+  const conds: Record<string, SideConditionSnapshot> = {};
   for (const id of Object.keys(side.sideConditions ?? {})) {
-    conds[id] = side.sideConditions[id]?.duration ?? null;
+    const sc = side.sideConditions[id];
+    conds[id] = {
+      duration: sc?.duration ?? null,
+      layers: sc?.layers ?? null,
+    };
   }
   return {
     id: side.id,
@@ -169,12 +194,19 @@ function snapshotSide(side: any): SideSnapshot {
 
 function snapshotBattle(battle: any): BattleSnapshot {
   const field = battle.field;
+  // Build pseudoWeather with durations (mirrors sideConditions pattern)
+  const pseudoWeather: Record<string, { duration: number | null }> = {};
+  for (const id of Object.keys(field.pseudoWeather ?? {})) {
+    pseudoWeather[id] = { duration: field.pseudoWeather[id]?.duration ?? null };
+  }
   return {
     turn: battle.turn,
     field: {
       weather: field.weather || null,
+      weatherDuration: field.weatherState?.duration ?? null,
       terrain: field.terrain || null,
-      pseudoWeather: Object.keys(field.pseudoWeather ?? {}),
+      terrainDuration: field.terrainState?.duration ?? null,
+      pseudoWeather,
     },
     sides: battle.sides.map(snapshotSide),
   };

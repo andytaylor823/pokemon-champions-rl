@@ -27,9 +27,9 @@ import numpy as np
 from toy_examples.leduc_poker.self_play import SelfPlayTrainer, TrainingConfig
 from toy_examples.leduc_poker.visualize import (
     plot_exploitability,
+    plot_loss_curves,
     plot_strategy_evolution,
     plot_tournament_heatmap,
-    plot_loss_curves,
 )
 
 

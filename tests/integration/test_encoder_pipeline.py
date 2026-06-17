@@ -18,9 +18,10 @@ import encoder
 from encoder import (
     ENTITY_FEATURE_DIM,
     FIELD_FEATURE_DIM,
-    NUM_NATURES,
     SCALAR_FEATURE_DIM,
     SIDE_FEATURE_DIM,
+    _nature_onehot,
+    _slot_flags,
 )
 
 if TYPE_CHECKING:
@@ -134,33 +135,27 @@ class TestMaskConsistency:
 # Value-level feature assertions (previously-dead feature blocks)
 # ---------------------------------------------------------------------------
 
-# Feature index helpers
-_NATURE_START = 1 + 6 + 7 + 7  # hp_frac + stats(6) + boosts(7) + status(7)
-
-
 class TestNatureFeatures:
     """Nature one-hot should be non-zero for real pokemon (was always zero before fix)."""
 
     def test_nature_onehot_set_at_team_preview(self, sim_client: SimClient, team_a: list, team_b: list):
         _, view = sim_client.new_battle(team_a, team_b, seed=[1, 2, 3, 4])
-        obs = encoder.encode(view, perspective="p1")
-        entities = obs["entities"]
-
-        # Every token should have exactly one nature bit set
-        for tok_idx in range(entities.shape[0]):
-            nature_slice = entities[tok_idx, _NATURE_START : _NATURE_START + NUM_NATURES]
-            assert nature_slice.sum().item() == 1.0, f"token {tok_idx}: nature one-hot sum != 1.0"
+        # Use the sub-encoder directly — no hand-derived offsets needed
+        my_side = view.snapshot.sides[0]
+        for i, mon in enumerate(my_side.pokemon):
+            nature_vec = _nature_onehot(mon)
+            assert nature_vec.sum().item() == 1.0, f"my pokemon {i}: nature one-hot sum != 1.0"
 
     def test_nature_onehot_set_in_move_phase(self, sim_client: SimClient, team_a: list, team_b: list):
         live, _ = sim_client.new_battle(team_a, team_b, seed=[1, 2, 3, 4])
         session, root, _ = sim_client.open_search(from_handle=live)
         try:
             res = sim_client.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
-            obs = encoder.encode(res["view"], perspective="p1")
-            entities = obs["entities"]
-            for tok_idx in range(entities.shape[0]):
-                nature_slice = entities[tok_idx, _NATURE_START : _NATURE_START + NUM_NATURES]
-                assert nature_slice.sum().item() == 1.0, f"token {tok_idx}: nature one-hot sum != 1.0"
+            move_view = res["view"]
+            for side in move_view.snapshot.sides:
+                for i, mon in enumerate(side.pokemon):
+                    nature_vec = _nature_onehot(mon)
+                    assert nature_vec.sum().item() == 1.0, f"{side.id} pokemon {i}: nature one-hot sum != 1.0"
         finally:
             sim_client.close_search(session)
 
@@ -202,23 +197,17 @@ class TestPositionFeatures:
         try:
             res = sim_client.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
             move_view = res["view"]
-            obs = encoder.encode(move_view, perspective="p1")
-            entities = obs["entities"]
+            # Use the sub-encoder directly — no hand-derived offsets needed
+            p1_side = move_view.snapshot.sides[0] if move_view.snapshot.sides[0].id == "p1" else move_view.snapshot.sides[1]
 
-            # Compute the physical slot start index
-            flags_start = 1 + 6 + 7 + 7 + 25 + 8 + 3  # hp+stats+boosts+status+nature+moves+volatiles
-            slot_start = flags_start + 4  # skip is_active, is_bench, is_fainted, item_consumed
-
-            # First 4 tokens are p1's team (2 active, 2 bench in doubles)
             p1_active_positions = []
-            for tok_idx in range(4):
-                slot_vec = entities[tok_idx, slot_start : slot_start + 3]
-                # Active mons: one of active-left or active-right should be set
-                is_active = entities[tok_idx, flags_start].item()
-                if is_active > 0:
+            for mon in p1_side.pokemon:
+                flags = _slot_flags(mon, is_opponent=False)
+                # flags layout: [is_active, is_bench, is_fainted, item_consumed, pos_left, pos_right, pos_bench, side]
+                if flags[0].item() > 0:  # is_active
+                    slot_vec = flags[4:7]  # physical_slot one-hot
                     p1_active_positions.append(slot_vec.argmax().item())
 
-            # In doubles, there should be exactly 2 active mons with distinct slot assignments
             assert len(p1_active_positions) == 2, f"Expected 2 active p1 mons, got {len(p1_active_positions)}"
             assert 0 in p1_active_positions, "Expected one active mon at position 0 (active-left)"
             assert 1 in p1_active_positions, "Expected one active mon at position 1 (active-right)"

@@ -69,7 +69,7 @@ def main() -> None:
     # Set random seed if provided
     if args.seed is not None:
         random.seed(args.seed)
-        np.random.default_rng(args.seed)
+        np.random.seed(args.seed)
         import torch
         torch.manual_seed(args.seed)
 

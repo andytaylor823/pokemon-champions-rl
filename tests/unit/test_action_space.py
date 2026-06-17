@@ -14,7 +14,9 @@ from action_space import (
     MoveAction,
     PassAction,
     SwitchAction,
+    _choice_to_slot_action,
     _index_to_slot_action,
+    _legal_switches,
     _slot_action_to_index,
     _valid_targets_for,
     choice_string_to_index,
@@ -517,11 +519,9 @@ class TestPassChoiceString:
     """Pass action string parsing."""
 
     def test_pass_string_returns_pass_index(self):
-        from action_space import _choice_to_slot_action
         assert _choice_to_slot_action("pass") == PASS_INDEX
 
     def test_empty_string_returns_pass_index(self):
-        from action_space import _choice_to_slot_action
         assert _choice_to_slot_action("") == PASS_INDEX
 
     def test_single_choice_maps_to_pass_in_slot2(self):
@@ -536,6 +536,83 @@ class TestPassChoiceString:
         slot1 = _slot_action_to_index(None, None, False, 1)  # bench_pos=1 -> team_slot=3
         expected = MOVE_PHASE_OFFSET + slot1 * ACTIONS_PER_SLOT + PASS_INDEX
         assert idx == expected
+
+
+class TestShowdownFormatParsing:
+    """Test choice_string_to_index against the full set of valid Showdown
+    choice string formats, not just round-trips through our own serializer.
+
+    Showdown emits several forms that differ from our canonical output:
+      - "move N"         (self/spread moves omit target)
+      - "move N mega"    (mega without target)
+      - "move N T"       (targeted)
+      - "move N T mega"  (targeted + mega)
+    """
+
+    def test_move_without_target(self):
+        """'move 2' (Protect/self-targeting) should parse without crashing."""
+        idx = _choice_to_slot_action("move 2")
+        action = _index_to_slot_action(idx)
+        assert isinstance(action, MoveAction)
+        assert action.move_idx == 1
+        assert action.mega is False
+
+    def test_move_without_target_defaults_to_foe_left(self):
+        """Missing target defaults to 1 (canonical foe-left)."""
+        idx_no_target = _choice_to_slot_action("move 1")
+        idx_explicit = _choice_to_slot_action("move 1 1")
+        assert idx_no_target == idx_explicit
+
+    def test_mega_without_target(self):
+        """'move 1 mega' (self/spread + mega) should parse correctly."""
+        idx = _choice_to_slot_action("move 1 mega")
+        action = _index_to_slot_action(idx)
+        assert isinstance(action, MoveAction)
+        assert action.move_idx == 0
+        assert action.mega is True
+
+    def test_mega_with_target(self):
+        """'move 1 2 mega' round-trips through both serializer forms."""
+        idx = _choice_to_slot_action("move 1 2 mega")
+        action = _index_to_slot_action(idx)
+        assert isinstance(action, MoveAction)
+        assert action.move_idx == 0
+        assert action.target == 2
+        assert action.mega is True
+
+    def test_all_four_moves_without_target(self):
+        """'move 1' through 'move 4' all parse to distinct indices."""
+        indices = [_choice_to_slot_action(f"move {n}") for n in range(1, 5)]
+        assert len(set(indices)) == 4
+
+    def test_joint_with_targetless_slot(self):
+        """'move 2, switch 3' — targetless move in slot1, switch in slot2."""
+        idx = choice_string_to_index("move 2, switch 3")
+        choice = index_to_choice_string(idx)
+        assert "switch 3" in choice
+
+    @pytest.mark.parametrize("fragment,expected_move,expected_target,expected_mega", [
+        ("move 1", 0, 1, False),
+        ("move 2", 1, 1, False),
+        ("move 3", 2, 1, False),
+        ("move 4", 3, 1, False),
+        ("move 1 1", 0, 1, False),
+        ("move 1 2", 0, 2, False),
+        ("move 1 -1", 0, -1, False),
+        ("move 1 mega", 0, 1, True),
+        ("move 2 mega", 1, 1, True),
+        ("move 1 1 mega", 0, 1, True),
+        ("move 1 2 mega", 0, 2, True),
+        ("move 1 -1 mega", 0, -1, True),
+    ])
+    def test_all_showdown_move_variants(self, fragment, expected_move, expected_target, expected_mega):
+        """Parametrized coverage of every valid Showdown move fragment form."""
+        idx = _choice_to_slot_action(fragment)
+        action = _index_to_slot_action(idx)
+        assert isinstance(action, MoveAction)
+        assert action.move_idx == expected_move
+        assert action.target == expected_target
+        assert action.mega is expected_mega
 
 
 class TestZeroPpExclusion:
@@ -623,7 +700,6 @@ class TestBenchStates:
     """Legal switch availability based on bench pokemon health."""
 
     def test_all_bench_fainted_no_switches(self):
-        from action_space import _legal_switches
         side_pokemon = [
             {"condition": "200/200"},  # active slot 0
             {"condition": "180/180"},  # active slot 1
@@ -634,7 +710,6 @@ class TestBenchStates:
         assert switches == []
 
     def test_one_bench_alive(self):
-        from action_space import _legal_switches
         side_pokemon = [
             {"condition": "200/200"},
             {"condition": "180/180"},
@@ -645,7 +720,6 @@ class TestBenchStates:
         assert len(switches) == 1
 
     def test_both_bench_alive(self):
-        from action_space import _legal_switches
         side_pokemon = [
             {"condition": "200/200"},
             {"condition": "180/180"},

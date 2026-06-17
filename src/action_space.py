@@ -222,13 +222,13 @@ def _choice_to_slot_action(fragment: str) -> int:
         bench_pos = team_slot - 2  # team slot 3 -> bench pos 1, slot 4 -> bench pos 2
         return _slot_action_to_index(None, None, False, bench_pos)
 
-    # "move N T [mega]"
+    # "move N [T] [mega]" — target may be omitted for self/spread moves
     parts = fragment.split()
     if parts[0] != "move":
         raise ValueError(f"Expected 'move ...' or 'switch ...', got: {fragment!r}")
     move_num = int(parts[1])  # 1-indexed
-    target = int(parts[2])
-    mega = "mega" in parts[3:]
+    target = int(parts[2]) if len(parts) > 2 and parts[2] != "mega" else 1
+    mega = "mega" in parts[2:]
     return _slot_action_to_index(move_num - 1, target, mega, None)
 
 

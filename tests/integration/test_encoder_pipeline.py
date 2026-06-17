@@ -10,8 +10,10 @@ features on real battle data.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import random
 
 import numpy as np
+import pytest
 
 import action_space
 import encoder
@@ -20,6 +22,7 @@ from encoder import (
     FIELD_FEATURE_DIM,
     SCALAR_FEATURE_DIM,
     SIDE_FEATURE_DIM,
+    _encode_side,
     _nature_onehot,
     _slot_flags,
 )
@@ -211,5 +214,95 @@ class TestPositionFeatures:
             assert len(p1_active_positions) == 2, f"Expected 2 active p1 mons, got {len(p1_active_positions)}"
             assert 0 in p1_active_positions, "Expected one active mon at position 0 (active-left)"
             assert 1 in p1_active_positions, "Expected one active mon at position 1 (active-right)"
+        finally:
+            sim_client.close_search(session)
+
+
+# ---------------------------------------------------------------------------
+# Side condition encoding from real engine data
+# ---------------------------------------------------------------------------
+
+
+class TestSideConditionsFromEngine:
+    """Side conditions set by real engine moves encode correctly."""
+
+    def test_side_conditions_encode_from_real_battle(self, sim_client: SimClient, team_a: list, team_b: list):
+        """Drive a battle with default moves and verify any side conditions encode correctly."""
+
+        rng = random.Random(99)
+        live, _ = sim_client.new_battle(team_a, team_b, seed=[1, 2, 3, 4])
+        session, root, view = sim_client.open_search(from_handle=live)
+        try:
+            # Play several turns with default to accumulate side conditions
+            cur = root
+            for _ in range(10):
+                if view.terminal:
+                    break
+                choices = dict.fromkeys(view.to_move, "default")
+                seed = [rng.randint(0, 0xFFFF) for _ in range(4)]
+                res = sim_client.step(cur, choices, seed=seed)
+                cur, view = res.child, res.view
+
+            # Encode both sides — should not crash regardless of what conditions are set
+            for side in view.snapshot.sides:
+                feats = _encode_side(side)
+                assert feats.shape == (SIDE_FEATURE_DIM,)
+        finally:
+            sim_client.close_search(session)
+
+
+# ---------------------------------------------------------------------------
+# Perspective consistency
+# ---------------------------------------------------------------------------
+
+
+class TestPerspectiveConsistency:
+    """Encoding from p1 vs p2 should swap sides correctly."""
+
+    def test_slot_ids_swap_with_perspective(self, sim_client: SimClient, team_a: list, team_b: list):
+        _, view = sim_client.new_battle(team_a, team_b, seed=[1, 2, 3, 4])
+        obs_p1 = encoder.encode(view, perspective="p1")
+        obs_p2 = encoder.encode(view, perspective="p2")
+
+        # From p1's perspective: first 6 tokens are mine (slot_id=0), next 6 are opponent (slot_id=1)
+        assert (obs_p1["slot_id"][:6] == 0).all()
+        assert (obs_p1["slot_id"][6:] == 1).all()
+
+        # From p2's perspective: same structure but p2's mons come first
+        assert (obs_p2["slot_id"][:6] == 0).all()
+        assert (obs_p2["slot_id"][6:] == 1).all()
+
+        # The species IDs should be swapped
+        p1_my_species = obs_p1["ids", "species"][:6]
+        p1_opp_species = obs_p1["ids", "species"][6:]
+        p2_my_species = obs_p2["ids", "species"][:6]
+        p2_opp_species = obs_p2["ids", "species"][6:]
+
+        # p1's opponent = p2's own team
+        assert (p1_opp_species == p2_my_species).all()
+        assert (p1_my_species == p2_opp_species).all()
+
+
+# ---------------------------------------------------------------------------
+# Release frees handle
+# ---------------------------------------------------------------------------
+
+
+class TestReleaseHandle:
+    """release() frees a handle; subsequent view() raises SimError."""
+
+    def test_release_then_view_raises(self, sim_client: SimClient, team_a: list, team_b: list):
+        from sim_client import SimError
+
+        live, _ = sim_client.new_battle(team_a, team_b, seed=[1, 2, 3, 4])
+        session, root, _ = sim_client.open_search(from_handle=live)
+        try:
+            res = sim_client.step(root, {"p1": "team 1234", "p2": "team 1234"}, seed=[10, 20, 30, 40])
+            child = res.child
+
+            sim_client.release(child)
+
+            with pytest.raises(SimError, match="unknown handle"):
+                sim_client.view(child)
         finally:
             sim_client.close_search(session)

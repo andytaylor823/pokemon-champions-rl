@@ -429,3 +429,269 @@ class TestLegalMask:
             for s2 in range(ACTIONS_PER_SLOT)
         )
         assert any_mega, "Mega move should be legal when canMegaEvo is True"
+
+
+# ---------------------------------------------------------------------------
+# EXHAUSTIVE: Targeting, trapped, pass, PP exclusion, bench states
+# ---------------------------------------------------------------------------
+
+
+class TestScriptedTarget:
+    """Scripted target type (Struggle, etc.) produces single canonical target."""
+
+    def test_scripted_returns_single_target(self):
+        assert _valid_targets_for("scripted") == [1]
+
+    def test_scripted_in_legal_mask(self):
+        """A mon with only Struggle (scripted target) should still have legal actions."""
+        request = {
+            "active": [
+                {"moves": [{"id": "struggle", "pp": 1, "target": "scripted"}]},
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "100/200"},
+                {"condition": "100/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        assert mask[MOVE_PHASE_OFFSET:].any()
+
+
+class TestTrappedMon:
+    """A trapped mon cannot switch — only moves are legal."""
+
+    def test_trapped_excludes_switches(self):
+        request = {
+            "trapped": True,
+            "active": [
+                {"moves": [
+                    {"id": "heatwave", "pp": 5, "target": "normal"},
+                    {"id": "protect", "pp": 5, "target": "self"},
+                ]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Slot 1 (index 0) should have no switch actions
+        sw1 = _slot_action_to_index(None, None, False, 1)
+        sw2 = _slot_action_to_index(None, None, False, 2)
+        # Check no joint action has slot1 as a switch
+        for s2 in range(ACTIONS_PER_SLOT):
+            assert not mask[MOVE_PHASE_OFFSET + sw1 * ACTIONS_PER_SLOT + s2]
+            assert not mask[MOVE_PHASE_OFFSET + sw2 * ACTIONS_PER_SLOT + s2]
+
+    def test_trapped_with_all_moves_disabled(self):
+        """Trapped + all moves disabled = no legal actions for slot 1 (degenerate)."""
+        request = {
+            "trapped": True,
+            "active": [
+                {"moves": [
+                    {"id": "heatwave", "pp": 5, "target": "normal", "disabled": True},
+                    {"id": "protect", "pp": 5, "target": "self", "disabled": True},
+                ]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Slot 1 has no legal moves (all disabled) and no switches (trapped)
+        # So the entire mask should be empty (no joint actions possible)
+        assert not mask[MOVE_PHASE_OFFSET:].any()
+
+
+class TestPassChoiceString:
+    """Pass action string parsing."""
+
+    def test_pass_string_returns_pass_index(self):
+        from action_space import _choice_to_slot_action
+        assert _choice_to_slot_action("pass") == PASS_INDEX
+
+    def test_empty_string_returns_pass_index(self):
+        from action_space import _choice_to_slot_action
+        assert _choice_to_slot_action("") == PASS_INDEX
+
+    def test_single_choice_maps_to_pass_in_slot2(self):
+        """A single-slot choice string implies slot2 is pass."""
+        idx = choice_string_to_index("move 1 1")
+        slot1 = _slot_action_to_index(0, 1, False, None)
+        expected = MOVE_PHASE_OFFSET + slot1 * ACTIONS_PER_SLOT + PASS_INDEX
+        assert idx == expected
+
+    def test_single_switch_maps_to_pass_in_slot2(self):
+        idx = choice_string_to_index("switch 3")
+        slot1 = _slot_action_to_index(None, None, False, 1)  # bench_pos=1 -> team_slot=3
+        expected = MOVE_PHASE_OFFSET + slot1 * ACTIONS_PER_SLOT + PASS_INDEX
+        assert idx == expected
+
+
+class TestZeroPpExclusion:
+    """Moves with 0 PP (not explicitly disabled) should be excluded from mask."""
+
+    def test_zero_pp_excluded(self):
+        request = {
+            "active": [
+                {"moves": [
+                    {"id": "heatwave", "pp": 0, "target": "normal"},
+                    {"id": "protect", "pp": 5, "target": "self"},
+                ]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Heat Wave (move_idx=0) with 0 PP should not appear
+        slot1_move0_t1 = _slot_action_to_index(0, 1, False, None)
+        any_with_move0 = any(
+            mask[MOVE_PHASE_OFFSET + slot1_move0_t1 * ACTIONS_PER_SLOT + s2]
+            for s2 in range(ACTIONS_PER_SLOT)
+        )
+        assert not any_with_move0, "0 PP move should not be legal"
+
+    def test_one_pp_included(self):
+        request = {
+            "active": [
+                {"moves": [
+                    {"id": "heatwave", "pp": 1, "target": "normal"},
+                ]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        slot1_move0_t1 = _slot_action_to_index(0, 1, False, None)
+        any_with_move0 = any(
+            mask[MOVE_PHASE_OFFSET + slot1_move0_t1 * ACTIONS_PER_SLOT + s2]
+            for s2 in range(ACTIONS_PER_SLOT)
+        )
+        assert any_with_move0, "1 PP move should be legal"
+
+    def test_all_moves_zero_pp_only_switches_legal(self):
+        request = {
+            "active": [
+                {"moves": [
+                    {"id": "heatwave", "pp": 0, "target": "normal"},
+                    {"id": "protect", "pp": 0, "target": "self"},
+                    {"id": "airslash", "pp": 0, "target": "normal"},
+                    {"id": "solarbeam", "pp": 0, "target": "normal"},
+                ]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Only switch actions should be legal for slot 1
+        assert mask[MOVE_PHASE_OFFSET:].any()
+        # Verify at least one switch appears
+        sw_idx = _slot_action_to_index(None, None, False, 1)
+        any_switch = any(
+            mask[MOVE_PHASE_OFFSET + sw_idx * ACTIONS_PER_SLOT + s2]
+            for s2 in range(ACTIONS_PER_SLOT)
+        )
+        assert any_switch, "Switches should be legal when all moves have 0 PP"
+
+
+class TestBenchStates:
+    """Legal switch availability based on bench pokemon health."""
+
+    def test_all_bench_fainted_no_switches(self):
+        from action_space import _legal_switches
+        side_pokemon = [
+            {"condition": "200/200"},  # active slot 0
+            {"condition": "180/180"},  # active slot 1
+            {"condition": "0 fnt"},    # bench 1 fainted
+            {"condition": "0 fnt"},    # bench 2 fainted
+        ]
+        switches = _legal_switches(side_pokemon)
+        assert switches == []
+
+    def test_one_bench_alive(self):
+        from action_space import _legal_switches
+        side_pokemon = [
+            {"condition": "200/200"},
+            {"condition": "180/180"},
+            {"condition": "150/150"},  # bench 1 alive
+            {"condition": "0 fnt"},    # bench 2 fainted
+        ]
+        switches = _legal_switches(side_pokemon)
+        assert len(switches) == 1
+
+    def test_both_bench_alive(self):
+        from action_space import _legal_switches
+        side_pokemon = [
+            {"condition": "200/200"},
+            {"condition": "180/180"},
+            {"condition": "150/150"},
+            {"condition": "100/100"},
+        ]
+        switches = _legal_switches(side_pokemon)
+        assert len(switches) == 2
+
+    def test_cross_slot_switch_collision_excluded(self):
+        """Both slots switching to same bench target is excluded."""
+        request = {
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 0, "target": "normal"}]},
+                {"moves": [{"id": "protect", "pp": 0, "target": "self"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "100/200"},
+                {"condition": "100/180"},
+                {"condition": "150/150"},  # only bench mon alive
+                {"condition": "0 fnt"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Both slots can switch to bench_pos=1 (team_slot=3)
+        sw_idx = _slot_action_to_index(None, None, False, 1)
+        collision = MOVE_PHASE_OFFSET + sw_idx * ACTIONS_PER_SLOT + sw_idx
+        assert not mask[collision], "Both switching to same target should be excluded"
+
+    def test_cross_slot_different_targets_allowed(self):
+        """Slots switching to different bench targets is legal."""
+        request = {
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 0, "target": "normal"}]},
+                {"moves": [{"id": "protect", "pp": 0, "target": "self"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "100/200"},
+                {"condition": "100/180"},
+                {"condition": "150/150"},  # bench 1 alive
+                {"condition": "100/100"},  # bench 2 alive
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        sw1 = _slot_action_to_index(None, None, False, 1)
+        sw2 = _slot_action_to_index(None, None, False, 2)
+        # Slot1 -> bench1, slot2 -> bench2 should be legal
+        cross = MOVE_PHASE_OFFSET + sw1 * ACTIONS_PER_SLOT + sw2
+        assert mask[cross], "Different switch targets should be allowed"

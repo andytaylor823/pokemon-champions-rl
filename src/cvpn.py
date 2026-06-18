@@ -26,11 +26,6 @@ if TYPE_CHECKING:
 # Fixed prefix tokens before the variable-length entity tokens
 _N_GLOBAL_TOKENS = 5  # CLS, field, side_p1, side_p2, meta
 
-# Phase one-hot indices within the scalars tensor (see encoder._PHASE_MAP)
-_PHASE_IDX_TEAM_PREVIEW = 1  # scalars[..., 1] = teamPreview
-_PHASE_IDX_MOVE = 2  # scalars[..., 2] = move
-_PHASE_IDX_FORCE_SWITCH = 3  # scalars[..., 3] = forceSwitch
-
 
 @dataclass(frozen=True)
 class CVPNConfig:
@@ -209,11 +204,9 @@ class CVPN(nn.Module):
         move_emb_raw = self.move_embed(obs["ids", "moves"])  # [B, N, 4, d_move]
 
         # --- 2. Move attention pool (D3) ---
-        n_entities = move_emb_raw.shape[1]
-        # Flatten B*N for pooling, then restore shape
-        move_flat = move_emb_raw.reshape(batch_size * n_entities, 4, cfg.d_move)
-        move_summary = self.move_pool(move_flat)  # [B*N, d_move]
-        move_summary = move_summary.reshape(batch_size, n_entities, cfg.d_move)
+        # MoveAttentionPool is rank-agnostic ([*, 4, d_move]), so feed the 4-D
+        # tensor directly — matmul broadcasting handles [B, N, ...] natively.
+        move_summary = self.move_pool(move_emb_raw)  # [B, N, d_move]
 
         # --- 3. Entity input projection ---
         entities = obs["entities"]  # [B, N, entity_feature_dim]
@@ -243,7 +236,7 @@ class CVPN(nn.Module):
         cls_out = h[:, 0]  # [B, d_model] — read the evolved CLS token
 
         # --- 8. Policy head (D4) ---
-        policy_logits = self._assemble_policy(cls_out, obs["scalars"], obs["action_mask"])
+        policy_logits = self._assemble_policy(cls_out, obs["action_mask"])
 
         # --- 9. Value head (D5) ---
         value = torch.tanh(self.value_head(cls_out)).squeeze(-1)  # [B]
@@ -255,49 +248,16 @@ class CVPN(nn.Module):
 
         return policy_logits, value
 
-    def _assemble_policy(
-        self,
-        cls_out: torch.Tensor,
-        scalars: torch.Tensor,
-        action_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """Build the full [B, A] policy logit vector from phase-split heads.
+    def _assemble_policy(self, cls_out: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
+        """Build the [B, A] policy logit vector from the two phase heads, then mask to legal.
 
-        The active phase's head fills its region with real logits; the inactive
-        region stays at -inf.  The action_mask then further masks illegal entries
-        within the active region.
+        Each head produces logits for its own region only; the action_mask
+        (phase-exclusive by construction in action_space.legal_mask) zeroes the
+        inactive phase's region, so no explicit phase routing is needed.
         """
-        batch_size = cls_out.shape[0]
-        device = cls_out.device
         cfg = self.config
-
-        # Initialize all logits to -inf (inactive by default)
-        logits = torch.full((batch_size, cfg.action_dim), float("-inf"), device=device)
-
-        # Detect active phase from the scalars one-hot
-        is_tp = scalars[:, _PHASE_IDX_TEAM_PREVIEW] > 0.5  # [B] bool
-        is_mp = (scalars[:, _PHASE_IDX_MOVE] > 0.5) | (scalars[:, _PHASE_IDX_FORCE_SWITCH] > 0.5)
-
-        # Compute both heads (cheap linear layers — run all samples through both)
-        tp_logits = self.tp_head(cls_out)  # [B, team_preview_count]
-        mp_logits = self.mp_head(cls_out)  # [B, move_phase_count]
-
-        # Scatter head outputs into the appropriate region per sample
-        tp_end = TEAM_PREVIEW_OFFSET + cfg.team_preview_count
-        mp_end = MOVE_PHASE_OFFSET + cfg.move_phase_count
-
-        if is_tp.any():
-            # Expand the per-sample bool to broadcast over the region width
-            tp_mask = is_tp.unsqueeze(1).expand(-1, cfg.team_preview_count)
-            logits[:, TEAM_PREVIEW_OFFSET:tp_end] = torch.where(
-                tp_mask, tp_logits, logits[:, TEAM_PREVIEW_OFFSET:tp_end]
-            )
-
-        if is_mp.any():
-            mp_mask = is_mp.unsqueeze(1).expand(-1, cfg.move_phase_count)
-            logits[:, MOVE_PHASE_OFFSET:mp_end] = torch.where(
-                mp_mask, mp_logits, logits[:, MOVE_PHASE_OFFSET:mp_end]
-            )
-
-        # Apply action_mask: illegal entries → -inf
+        # Initialize all logits to -inf, then write both heads into their regions
+        logits = torch.full((cls_out.shape[0], cfg.action_dim), float("-inf"), device=cls_out.device)
+        logits[:, TEAM_PREVIEW_OFFSET:TEAM_PREVIEW_OFFSET + cfg.team_preview_count] = self.tp_head(cls_out)
+        logits[:, MOVE_PHASE_OFFSET:MOVE_PHASE_OFFSET + cfg.move_phase_count] = self.mp_head(cls_out)
         return logits.masked_fill(~action_mask, float("-inf"))

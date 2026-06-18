@@ -141,10 +141,12 @@ model performance** — if move detail proves lost, escalate to per-move tokens 
 The action space has two disjoint phases (`action_space.py`): team preview
 (`TEAM_PREVIEW_COUNT = 360` orderings) and the move phase (`MOVE_PHASE_COUNT = 729` slot-pairs).
 Internally the CVPN uses **two heads** (one per phase) read from CLS, so neither head wastes
-capacity on the other phase's always-masked region. `forward()` then **assembles a single
-`[A]` logit vector** (the inactive phase region set to `-inf`) and applies `action_mask`. This
-gives every downstream consumer (Search prior, Trainer cross-entropy) one uniform distribution
-over the canonical index that matches `action_space` and the search policy target σ̄ — with no
+capacity on the other phase's always-masked region. `forward()` **writes both heads into their
+respective regions unconditionally**, then applies `action_mask` — which is phase-exclusive by
+construction (`legal_mask` sets `True` only in the active phase's region), so the inactive
+phase's logits get masked to `-inf` without any explicit phase detection. This gives every
+downstream consumer (Search prior, Trainer cross-entropy) one uniform distribution over the
+canonical index that matches `action_space` and the search policy target σ̄ — with no
 marginalization. (Rationale: a single flat head would predict a large always-masked region;
 fully-factored per-slot heads don't fit team preview's permutation structure and force the joint
 search target to be marginalized.)
@@ -208,8 +210,9 @@ With concrete Phase-1 dims (`d_model` tentative = 128):
    FFN width `ffn_mult × d_model`); **no positional encodings on the token axis** (slot identity
    — active/back, side, left/right — is a per-token *feature*, not a position; `state-encoding.md`
    §8.6). Output `h[5+N, d_model]`; read `CLS_out = h[0]`.
-8. **Policy (D4).** team-preview head + move-phase head from `CLS_out` → assemble `[A]` (inactive
-   region `-inf`) → apply `action_mask` → `policy_logits[A]`.
+8. **Policy (D4).** team-preview head + move-phase head from `CLS_out` → write both into `[A]`
+   → apply `action_mask` (phase-exclusive, masks the inactive region to `-inf`) →
+   `policy_logits[A]`.
 9. **Value (D5).** `tanh(Linear(d_model→1)(CLS_out))` → scalar `[-1,1]`.
 
 Batching: `obs` may be a single bundle or a `[B]`-batched one (`collate_obs_bundles` pads the

@@ -333,31 +333,37 @@ def _legal_switches(side_pokemon: list) -> list[int]:
     return switches
 
 
+_TARGET_TYPE_MAP: dict[str, list[int]] = {
+    # Single-target moves aimed at foes or ally
+    "normal": [1, 2, -1],
+    "any": [1, 2, -1],
+    # Single-target but restricted to foes only (no ally target option)
+    "adjacentFoe": [1, 2],
+    # Spread moves hitting all adjacent foes (target is irrelevant but use 1 as canonical)
+    "allAdjacentFoes": [1],
+    "allAdjacent": [1],
+    "all": [1],
+    # Self-targeting (Protect, Swords Dance, etc.)
+    "self": [1],
+    # Ally-only (Helping Hand, Heal Pulse targeting ally)
+    "adjacentAlly": [-1],
+    "adjacentAllyOrSelf": [-1],
+    "allySide": [-1],
+    "allyTeam": [-1],
+    # "allies" hits user + ally without a target choice (Life Dew, Howl, etc.)
+    "allies": [-1],
+    # Engine-chosen target: Struggle, Counter, Mirror Coat, etc.
+    "scripted": [1],
+    # Multi-turn rampage moves (Outrage, Thrash, Petal Dance) — engine picks random foe
+    "randomNormal": [1],
+    # Hazards targeting the opposing side (Stealth Rock, Spikes, Sticky Web, Toxic Spikes)
+    "foeSide": [1],
+}
+
+
 def _valid_targets_for(target_type: str) -> list[int]:
     """Map Showdown target type to valid target integers for our canonical space."""
-    # Single-target moves aimed at foes or ally
-    if target_type in ("normal", "any"):
-        return [1, 2, -1]
-    # Single-target but restricted to foes only (no ally target option)
-    if target_type == "adjacentFoe":
-        return [1, 2]
-    # Spread moves hitting all adjacent foes (target is irrelevant but use 1 as canonical)
-    if target_type in ("allAdjacentFoes", "allAdjacent", "all"):
-        return [1]
-    # Self-targeting (Protect, Swords Dance, etc.)
-    if target_type == "self":
-        return [1]
-    # Ally-only (Helping Hand, Heal Pulse targeting ally)
-    # "allies" hits user + ally without a target choice (Life Dew, Howl, etc.)
-    if target_type in ("adjacentAlly", "adjacentAllyOrSelf", "allySide", "allyTeam", "allies"):
-        return [-1]
-    # Engine-chosen target: Struggle, Counter, Mirror Coat, etc.
-    if target_type == "scripted":
-        return [1]
-    # Multi-turn rampage moves (Outrage, Thrash, Petal Dance) — engine picks random foe
-    if target_type == "randomNormal":
-        return [1]
-    # Hazards targeting the opposing side (Stealth Rock, Spikes, Sticky Web, Toxic Spikes)
-    if target_type == "foeSide":
-        return [1]
-    raise ValueError(f"Unknown Showdown target type: {target_type!r}")
+    try:
+        return _TARGET_TYPE_MAP[target_type]
+    except KeyError:
+        raise ValueError(f"Unknown Showdown target type: {target_type!r}") from None

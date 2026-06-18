@@ -581,3 +581,765 @@ class TestRealFixtureSmoke:
         assert policy.shape == (A,)
         assert -1.0 <= value.item() <= 1.0
         assert (policy > float("-inf")).any()
+
+
+# ---------------------------------------------------------------------------
+# _assemble_policy edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestAssemblePolicyEdgeCases:
+    """Direct and indirect tests for _assemble_policy boundary behaviour."""
+
+    def test_all_illegal_mask_produces_all_neg_inf(self):
+        """When action_mask is all-False, every logit must be -inf (no NaN)."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="move")
+        # Zero out the entire action mask
+        obs["action_mask"] = torch.zeros(A, dtype=torch.bool)
+        with torch.no_grad():
+            policy, value = model(obs)
+        assert (policy == float("-inf")).all(), "All logits should be -inf when no legal actions"
+        assert torch.isfinite(value), "Value should remain finite even with no legal actions"
+
+    def test_region_boundary_team_preview(self):
+        """Team-preview head writes exactly to [TEAM_PREVIEW_OFFSET, TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT)."""
+        model = CVPN()
+        model.eval()
+        # Build a mask that is True only in the TP region
+        action_mask = torch.zeros(A, dtype=torch.bool)
+        action_mask[TEAM_PREVIEW_OFFSET:TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT] = True
+        obs = _make_dummy_bundle(12, phase="teamPreview")
+        obs["action_mask"] = action_mask
+        with torch.no_grad():
+            policy, _ = model(obs)
+        # TP region should all be finite (head wrote real logits, mask kept them)
+        tp_slice = policy[TEAM_PREVIEW_OFFSET:TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT]
+        assert torch.isfinite(tp_slice).all(), "All TP logits should be finite"
+        # Move region should be all -inf (head wrote logits, but mask zeroed them)
+        move_slice = policy[MOVE_PHASE_OFFSET:MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT]
+        assert (move_slice == float("-inf")).all(), "Move region should be all -inf in TP phase"
+
+    def test_region_boundary_move_phase(self):
+        """Move-phase head writes exactly to [MOVE_PHASE_OFFSET, MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT)."""
+        model = CVPN()
+        model.eval()
+        # Build a mask that is True only in the move region
+        action_mask = torch.zeros(A, dtype=torch.bool)
+        action_mask[MOVE_PHASE_OFFSET:MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT] = True
+        obs = _make_dummy_bundle(12, phase="move")
+        obs["action_mask"] = action_mask
+        with torch.no_grad():
+            policy, _ = model(obs)
+        # Move region should all be finite
+        move_slice = policy[MOVE_PHASE_OFFSET:MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT]
+        assert torch.isfinite(move_slice).all(), "All move logits should be finite"
+        # TP region should be all -inf
+        tp_slice = policy[TEAM_PREVIEW_OFFSET:TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT]
+        assert (tp_slice == float("-inf")).all(), "TP region should be all -inf in move phase"
+
+    def test_no_gap_between_regions(self):
+        """The two regions together span exactly [0, A) with no unaddressed indices."""
+        assert TEAM_PREVIEW_OFFSET == 0, "TP region should start at 0"
+        assert MOVE_PHASE_OFFSET == TEAM_PREVIEW_COUNT, "Move region starts right after TP"
+        assert MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT == A, "Move region ends at A"
+
+    def test_softmax_on_all_neg_inf_produces_nan_not_crash(self):
+        """Softmax on all-inf logits produces NaN (expected) — confirm no crash."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="move")
+        obs["action_mask"] = torch.zeros(A, dtype=torch.bool)
+        with torch.no_grad():
+            policy, _ = model(obs)
+        # Softmax on all -inf is degenerate but should not raise
+        probs = torch.softmax(policy, dim=-1)
+        assert probs.shape == (A,)
+
+
+# ---------------------------------------------------------------------------
+# MoveAttentionPool extended tests
+# ---------------------------------------------------------------------------
+
+
+class TestMoveAttentionPoolExtended:
+    """Additional coverage for attention pool: 4D input, attention weights, gradients."""
+
+    def test_pool_4d_input(self):
+        """The actual CVPN feeds [B, N, 4, d_move] — verify shape with leading batch dim."""
+        from cvpn import MoveAttentionPool
+
+        pool = MoveAttentionPool(d_move=32)
+        # Simulate batched entity moves: 2 samples, 6 entities each, 4 moves
+        x = torch.randn(2, 6, 4, 32)
+        out = pool(x)
+        assert out.shape == (2, 6, 32), "Should collapse the 4-move dim, preserving [B, N]"
+
+    def test_attention_weights_sum_to_one(self):
+        """Internal softmax attention weights must sum to 1 along the key dim."""
+        from cvpn import MoveAttentionPool
+
+        pool = MoveAttentionPool(d_move=16)
+        pool.eval()
+        x = torch.randn(5, 4, 16)
+
+        # Manually compute attention weights to verify
+        k = pool.k_proj(x)
+        q = pool.query.expand(5, 1, 16)
+        scores = torch.matmul(q, k.transpose(-2, -1)) * pool._scale
+        attn = torch.softmax(scores, dim=-1)  # [5, 1, 4]
+        # Each entity's attention weights across 4 moves should sum to 1
+        attn_sums = attn.squeeze(-2).sum(dim=-1)  # [5]
+        assert torch.allclose(attn_sums, torch.ones(5), atol=1e-6)
+
+    def test_attention_weights_with_extreme_inputs(self):
+        """Verify softmax normalisation holds with large/small magnitude inputs."""
+        from cvpn import MoveAttentionPool
+
+        pool = MoveAttentionPool(d_move=16)
+        pool.eval()
+
+        # Large magnitude inputs
+        x_large = torch.randn(3, 4, 16) * 1000.0
+        out_large = pool(x_large)
+        assert torch.isfinite(out_large).all(), "Output should be finite with large inputs"
+
+        # Very small inputs
+        x_small = torch.randn(3, 4, 16) * 1e-8
+        out_small = pool(x_small)
+        assert torch.isfinite(out_small).all(), "Output should be finite with small inputs"
+
+    def test_pool_gradient_flow_isolation(self):
+        """query, k_proj.weight, and v_proj.weight all receive gradients."""
+        from cvpn import MoveAttentionPool
+
+        pool = MoveAttentionPool(d_move=16)
+        x = torch.randn(4, 4, 16, requires_grad=True)
+        out = pool(x)
+        loss = out.sum()
+        loss.backward()
+
+        assert pool.query.grad is not None, "query should receive gradient"
+        assert pool.query.grad.abs().sum() > 0, "query gradient should be non-zero"
+        assert pool.k_proj.weight.grad is not None, "k_proj should receive gradient"
+        assert pool.v_proj.weight.grad is not None, "v_proj should receive gradient"
+
+
+# ---------------------------------------------------------------------------
+# Numerical stability
+# ---------------------------------------------------------------------------
+
+
+class TestNumericalStability:
+    """CVPN outputs remain finite under extreme input conditions."""
+
+    def test_large_entity_features(self):
+        """Very large entity feature values should not produce NaN/inf."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="move")
+        # Amplify entity features to extreme magnitudes
+        obs["entities"] = obs["entities"] * 1e4
+        with torch.no_grad():
+            policy, value = model(obs)
+        mask = obs["action_mask"]
+        assert torch.isfinite(policy[mask]).all(), "Legal logits should be finite with large inputs"
+        assert torch.isfinite(value), "Value should be finite with large inputs"
+
+    def test_near_zero_entity_features(self):
+        """Near-zero entity features should produce finite outputs."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="move")
+        obs["entities"] = obs["entities"] * 1e-8
+        with torch.no_grad():
+            policy, value = model(obs)
+        mask = obs["action_mask"]
+        assert torch.isfinite(policy[mask]).all(), "Legal logits should be finite with tiny inputs"
+        assert torch.isfinite(value), "Value should be finite with tiny inputs"
+
+
+# ---------------------------------------------------------------------------
+# Global token count invariant
+# ---------------------------------------------------------------------------
+
+
+class TestGlobalTokenCount:
+    """_N_GLOBAL_TOKENS matches the actual assembled sequence."""
+
+    def test_n_global_tokens_value(self):
+        """The constant should be 5: CLS, field, side_p1, side_p2, meta."""
+        assert _N_GLOBAL_TOKENS == 5
+
+    def test_sequence_length_matches_n_plus_entities(self):
+        """Assembled sequence should have exactly _N_GLOBAL_TOKENS + N entity tokens."""
+        model = CVPN()
+        model.eval()
+        n_entities = 10
+        obs = _make_dummy_bundle(n_entities, phase="move")
+        # Unsqueeze to add batch dim (mimicking the forward's internal logic)
+        obs_batched = obs.unsqueeze(0)
+        # Reproduce the forward's token assembly to check seq length
+        species_emb = model.species_embed(obs_batched["ids", "species"])
+        ability_emb = model.ability_embed(obs_batched["ids", "ability"])
+        item_emb = model.item_embed(obs_batched["ids", "item"])
+        move_emb_raw = model.move_embed(obs_batched["ids", "moves"])
+        move_summary = model.move_pool(move_emb_raw)
+        entities = obs_batched["entities"]
+        entity_input = torch.cat([entities, species_emb, ability_emb, item_emb, move_summary], dim=-1)
+        entity_tokens = model.entity_proj(entity_input)
+
+        field_tok = model.field_proj(obs_batched["field"]).unsqueeze(1)
+        side_p1 = model.side_proj(obs_batched["sides"][:, 0]).unsqueeze(1)
+        side_p2 = model.side_proj(obs_batched["sides"][:, 1]).unsqueeze(1)
+        meta_tok = model.meta_proj(obs_batched["scalars"]).unsqueeze(1)
+        cls = model.cls_token.unsqueeze(0).unsqueeze(0).expand(1, 1, -1)
+        seq = torch.cat([cls, field_tok, side_p1, side_p2, meta_tok, entity_tokens], dim=1)
+
+        expected_seq_len = _N_GLOBAL_TOKENS + n_entities
+        assert seq.shape[1] == expected_seq_len, (
+            f"Sequence length {seq.shape[1]} != {_N_GLOBAL_TOKENS} + {n_entities}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Dropout train/eval behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestDropoutBehaviour:
+    """Dropout must be active in train mode and inactive in eval mode."""
+
+    def test_eval_mode_deterministic(self):
+        """Two forward passes in eval mode produce identical outputs."""
+        torch.manual_seed(99)
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="move")
+        with torch.no_grad():
+            p1, v1 = model(obs)
+            p2, v2 = model(obs)
+        torch.testing.assert_close(p1, p2)
+        torch.testing.assert_close(v1, v2)
+
+    def test_train_mode_stochastic(self):
+        """Two forward passes in train mode should differ due to dropout.
+
+        With dropout=0.1 and a reasonably sized model, the probability of
+        identical outputs is vanishingly small.
+        """
+        torch.manual_seed(100)
+        model = CVPN()
+        model.train()
+        obs = _make_dummy_bundle(12, phase="teamPreview")
+        p1, _v1 = model(obs)
+        p2, _v2 = model(obs)
+        # At least the policy logits should differ due to stochastic dropout
+        assert not torch.allclose(p1, p2, atol=1e-7), (
+            "Train-mode outputs should differ due to dropout"
+        )
+
+
+# ---------------------------------------------------------------------------
+# State dict save/load round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestStateDictRoundTrip:
+    """CVPN checkpoint serialization preserves behaviour."""
+
+    def test_save_load_produces_identical_output(self):
+        """Save state_dict, load into fresh model, assert identical forward output."""
+        torch.manual_seed(42)
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(10, phase="move")
+
+        with torch.no_grad():
+            p_orig, v_orig = model(obs)
+
+        # Save and reload
+        state = model.state_dict()
+        model2 = CVPN()
+        model2.load_state_dict(state)
+        model2.eval()
+
+        with torch.no_grad():
+            p_loaded, v_loaded = model2(obs)
+
+        torch.testing.assert_close(p_orig, p_loaded)
+        torch.testing.assert_close(v_orig, v_loaded)
+
+    def test_save_load_custom_config(self):
+        """Round-trip also works with non-default config."""
+        cfg = CVPNConfig(d_model=64, n_heads=2, n_layers=2, d_species=16, d_ability=8, d_item=8, d_move=16)
+        torch.manual_seed(7)
+        model = CVPN(cfg)
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="teamPreview")
+
+        with torch.no_grad():
+            p_orig, v_orig = model(obs)
+
+        state = model.state_dict()
+        model2 = CVPN(cfg)
+        model2.load_state_dict(state)
+        model2.eval()
+
+        with torch.no_grad():
+            p_loaded, v_loaded = model2(obs)
+
+        torch.testing.assert_close(p_orig, p_loaded)
+        torch.testing.assert_close(v_orig, v_loaded)
+
+
+# ---------------------------------------------------------------------------
+# Config propagation to layer dimensions
+# ---------------------------------------------------------------------------
+
+
+class TestConfigPropagation:
+    """Custom CVPNConfig values are wired into actual network layer dimensions."""
+
+    def test_custom_d_model_propagates(self):
+        cfg = CVPNConfig(d_model=64, n_heads=2, n_layers=2, d_species=16, d_ability=8, d_item=8, d_move=16)
+        model = CVPN(cfg)
+        # Backbone layers should use d_model=64
+        assert model.cls_token.shape == (64,)
+        assert model.value_head.in_features == 64
+        assert model.value_head.out_features == 1
+        assert model.tp_head.in_features == 64
+        assert model.mp_head.in_features == 64
+
+    def test_head_out_features_match_action_space(self):
+        model = CVPN()
+        assert model.tp_head.out_features == TEAM_PREVIEW_COUNT
+        assert model.mp_head.out_features == MOVE_PHASE_COUNT
+
+    def test_embedding_table_sizes_match_config(self):
+        cfg = CVPNConfig()
+        model = CVPN(cfg)
+        assert model.species_embed.num_embeddings == cfg.n_species
+        assert model.ability_embed.num_embeddings == cfg.n_abilities
+        assert model.item_embed.num_embeddings == cfg.n_items
+        assert model.move_embed.num_embeddings == cfg.n_moves
+
+    def test_embedding_dims_match_config(self):
+        cfg = CVPNConfig(d_species=48, d_ability=24, d_item=24, d_move=48)
+        model = CVPN(cfg)
+        assert model.species_embed.embedding_dim == 48
+        assert model.ability_embed.embedding_dim == 24
+        assert model.item_embed.embedding_dim == 24
+        assert model.move_embed.embedding_dim == 48
+
+    def test_entity_proj_input_dim(self):
+        """Entity projection input = entity_feature_dim + d_species + d_ability + d_item + d_move."""
+        cfg = CVPNConfig(d_species=16, d_ability=8, d_item=8, d_move=16)
+        model = CVPN(cfg)
+        expected_in = cfg.entity_feature_dim + 16 + 8 + 8 + 16
+        assert model.entity_proj.in_features == expected_in
+
+
+# ---------------------------------------------------------------------------
+# Adversarial / boundary input testing
+# ---------------------------------------------------------------------------
+
+
+def _make_zero_bundle(n_tokens: int, phase: str = "move") -> ObsBundle:
+    """Bundle with all-zero entity features and all-zero IDs (padding_idx=0)."""
+    obs = _make_dummy_bundle(n_tokens, phase)
+    obs["entities"] = torch.zeros(n_tokens, ENTITY_FEATURE_DIM)
+    obs["ids", "species"] = torch.zeros(n_tokens, dtype=torch.long)
+    obs["ids", "ability"] = torch.zeros(n_tokens, dtype=torch.long)
+    obs["ids", "item"] = torch.zeros(n_tokens, dtype=torch.long)
+    obs["ids", "moves"] = torch.zeros(n_tokens, 4, dtype=torch.long)
+    return obs
+
+
+class TestAdversarialInputs:
+    """CVPN must produce finite, correctly shaped output under adversarial conditions."""
+
+    def test_all_zero_features_and_ids(self):
+        """Maximally uninformative input: zeros everywhere, all embeddings hit padding_idx=0."""
+        model = CVPN()
+        model.eval()
+        obs = _make_zero_bundle(8, phase="move")
+        with torch.no_grad():
+            policy, value = model(obs)
+        mask = obs["action_mask"]
+        assert policy.shape == (A,)
+        assert torch.isfinite(policy[mask]).all(), "Legal logits must be finite with all-zero input"
+        assert torch.isfinite(value), "Value must be finite with all-zero input"
+        assert -1.0 <= value.item() <= 1.0
+
+    def test_single_entity_n1(self):
+        """N=1 is the minimum entity count — 6-token sequence (5 global + 1 entity)."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(1, phase="move")
+        with torch.no_grad():
+            policy, value = model(obs)
+        assert policy.shape == (A,)
+        assert torch.isfinite(value), "Value must be finite with N=1"
+        assert -1.0 <= value.item() <= 1.0
+
+    def test_max_length_n24(self):
+        """N=24 is the upper bound (12 per side + Phase 4 candidates)."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(24, phase="move")
+        with torch.no_grad():
+            policy, value = model(obs)
+        assert policy.shape == (A,)
+        assert torch.isfinite(value), "Value must be finite with N=24"
+        assert -1.0 <= value.item() <= 1.0
+
+    def test_nearly_all_padded_one_real_token(self):
+        """N=12 entities but only 1 is real — attention over 5 global + 1 entity."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(12, phase="move")
+        # Only the first entity token is real; the rest are padding
+        pmask = torch.zeros(12, dtype=torch.bool)
+        pmask[0] = True
+        obs["padding_mask"] = pmask
+        with torch.no_grad():
+            policy, value = model(obs)
+        mask = obs["action_mask"]
+        assert policy.shape == (A,)
+        assert torch.isfinite(policy[mask]).all(), "Legal logits must be finite with 11/12 padded"
+        assert torch.isfinite(value), "Value must be finite with nearly all padding"
+
+    def test_huge_entity_magnitudes_1e6(self):
+        """Entity features at 1e6 magnitude — LayerNorm should absorb this."""
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="move")
+        obs["entities"] = obs["entities"] * 1e6
+        with torch.no_grad():
+            policy, value = model(obs)
+        mask = obs["action_mask"]
+        assert torch.isfinite(policy[mask]).all(), "Legal logits must be finite with 1e6 inputs"
+        assert torch.isfinite(value), "Value must be finite with 1e6 inputs"
+
+    def test_ids_at_vocab_boundary(self):
+        """All IDs set to max valid index — catches off-by-one in embedding tables."""
+        from vocab import ABILITY_VOCAB, ITEM_VOCAB, MOVE_VOCAB, SPECIES_VOCAB
+
+        model = CVPN()
+        model.eval()
+        n = 8
+        obs = _make_dummy_bundle(n, phase="move")
+        # Set every ID to the last valid index (size - 1, since size includes the UNK slot)
+        obs["ids", "species"] = torch.full((n,), SPECIES_VOCAB.size - 1, dtype=torch.long)
+        obs["ids", "ability"] = torch.full((n,), ABILITY_VOCAB.size - 1, dtype=torch.long)
+        obs["ids", "item"] = torch.full((n,), ITEM_VOCAB.size - 1, dtype=torch.long)
+        obs["ids", "moves"] = torch.full((n, 4), MOVE_VOCAB.size - 1, dtype=torch.long)
+        with torch.no_grad():
+            policy, value = model(obs)
+        mask = obs["action_mask"]
+        assert policy.shape == (A,)
+        assert torch.isfinite(policy[mask]).all(), "Legal logits must be finite at vocab boundary"
+        assert torch.isfinite(value), "Value must be finite at vocab boundary"
+
+    def test_all_zero_with_team_preview_phase(self):
+        """All-zero input in team preview phase (different head exercised)."""
+        model = CVPN()
+        model.eval()
+        obs = _make_zero_bundle(12, phase="teamPreview")
+        with torch.no_grad():
+            policy, value = model(obs)
+        mask = obs["action_mask"]
+        assert policy.shape == (A,)
+        assert torch.isfinite(policy[mask]).all()
+        assert torch.isfinite(value)
+
+
+# ---------------------------------------------------------------------------
+# Direct _assemble_policy unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestAssemblePolicyDirect:
+    """Call _assemble_policy directly with known CLS vectors to isolate slicing logic."""
+
+    def test_region_values_match_head_outputs(self):
+        """With an all-True mask, each region must contain exactly the head's raw output."""
+        model = CVPN()
+        model.eval()
+        cls_out = torch.ones(1, model.config.d_model)
+        all_legal = torch.ones(1, A, dtype=torch.bool)
+
+        with torch.no_grad():
+            logits = model._assemble_policy(cls_out, all_legal)
+            expected_tp = model.tp_head(cls_out)  # [1, TEAM_PREVIEW_COUNT]
+            expected_mp = model.mp_head(cls_out)  # [1, MOVE_PHASE_COUNT]
+
+        tp_slice = logits[:, TEAM_PREVIEW_OFFSET:TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT]
+        mp_slice = logits[:, MOVE_PHASE_OFFSET:MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT]
+        torch.testing.assert_close(tp_slice, expected_tp)
+        torch.testing.assert_close(mp_slice, expected_mp)
+
+    def test_off_by_one_region_boundaries(self):
+        """Boundary indices between regions must land in the correct region."""
+        model = CVPN()
+        model.eval()
+        cls_out = torch.randn(1, model.config.d_model)
+        all_legal = torch.ones(1, A, dtype=torch.bool)
+
+        with torch.no_grad():
+            logits = model._assemble_policy(cls_out, all_legal)
+
+        # Last TP index and first MP index are both finite (written by their heads)
+        last_tp_idx = TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT - 1
+        first_mp_idx = MOVE_PHASE_OFFSET
+        assert torch.isfinite(logits[0, last_tp_idx]), "Last TP index must be finite"
+        assert torch.isfinite(logits[0, first_mp_idx]), "First MP index must be finite"
+
+        # Last MP index is the end of the action space
+        last_mp_idx = MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT - 1
+        assert last_mp_idx == A - 1, "Last move-phase index must be A-1"
+        assert torch.isfinite(logits[0, last_mp_idx]), "Last MP index must be finite"
+
+    def test_mask_zeroes_precise_indices(self):
+        """A mask with exactly one True per region produces exactly 2 finite logits."""
+        model = CVPN()
+        model.eval()
+        cls_out = torch.randn(1, model.config.d_model)
+
+        # Exactly one legal action per region
+        mask = torch.zeros(1, A, dtype=torch.bool)
+        tp_legal_idx = TEAM_PREVIEW_OFFSET + 5
+        mp_legal_idx = MOVE_PHASE_OFFSET + 10
+        mask[0, tp_legal_idx] = True
+        mask[0, mp_legal_idx] = True
+
+        with torch.no_grad():
+            logits = model._assemble_policy(cls_out, mask)
+
+        finite_mask = torch.isfinite(logits[0])
+        assert finite_mask.sum() == 2, f"Expected exactly 2 finite logits, got {finite_mask.sum()}"
+        assert finite_mask[tp_legal_idx], "The TP legal index must be finite"
+        assert finite_mask[mp_legal_idx], "The MP legal index must be finite"
+
+    def test_batched_per_sample_independence(self):
+        """Each sample in a batch gets its own mask applied independently."""
+        model = CVPN()
+        model.eval()
+        batch = 3
+        cls_out = torch.randn(batch, model.config.d_model)
+
+        # Different masks per sample: sample 0 has TP only, sample 1 has MP only,
+        # sample 2 has both
+        masks = torch.zeros(batch, A, dtype=torch.bool)
+        masks[0, TEAM_PREVIEW_OFFSET:TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT] = True
+        masks[1, MOVE_PHASE_OFFSET:MOVE_PHASE_OFFSET + MOVE_PHASE_COUNT] = True
+        masks[2, :] = True  # all legal
+
+        with torch.no_grad():
+            logits = model._assemble_policy(cls_out, masks)
+
+        # Sample 0: entire move region must be -inf
+        assert (logits[0, MOVE_PHASE_OFFSET:] == float("-inf")).all()
+        # Sample 1: entire TP region must be -inf
+        assert (logits[1, :TEAM_PREVIEW_COUNT] == float("-inf")).all()
+        # Sample 2: no -inf (all-True mask, both heads write finite values)
+        assert torch.isfinite(logits[2]).all()
+
+    def test_distinct_cls_vectors_produce_distinct_logits(self):
+        """Two different CLS vectors must produce different head outputs."""
+        model = CVPN()
+        model.eval()
+        all_legal = torch.ones(1, A, dtype=torch.bool)
+
+        with torch.no_grad():
+            logits_a = model._assemble_policy(torch.zeros(1, model.config.d_model), all_legal)
+            logits_b = model._assemble_policy(torch.ones(1, model.config.d_model), all_legal)
+
+        assert not torch.allclose(logits_a, logits_b), "Different CLS inputs must produce different logits"
+
+
+# ---------------------------------------------------------------------------
+# Token ordering convention verification
+# ---------------------------------------------------------------------------
+
+
+class TestTokenOrdering:
+    """Verify the token sequence is [CLS, field, side_p1, side_p2, meta, entities...]."""
+
+    def _capture_backbone_input(self, model: CVPN, obs: ObsBundle) -> torch.Tensor:
+        """Run a forward pass and capture the seq tensor fed to the backbone."""
+        captured = {}
+
+        def hook(module, args, kwargs):
+            # nn.TransformerEncoder receives src as the first positional arg
+            captured["seq"] = args[0].detach().clone()
+
+        handle = model.backbone.register_forward_pre_hook(hook, with_kwargs=True)
+        try:
+            with torch.no_grad():
+                model(obs)
+        finally:
+            handle.remove()
+        return captured["seq"]
+
+    def _compute_expected_tokens(self, model: CVPN, obs: ObsBundle) -> dict[str, torch.Tensor]:
+        """Independently compute what each token position should contain."""
+        # Add batch dim for unbatched obs
+        unbatched = obs.batch_size == torch.Size([])
+        if unbatched:
+            obs = obs.unsqueeze(0)
+
+        batch_size = obs.batch_size[0]
+        cfg = model.config
+
+        with torch.no_grad():
+            # Embeddings
+            species_emb = model.species_embed(obs["ids", "species"])
+            ability_emb = model.ability_embed(obs["ids", "ability"])
+            item_emb = model.item_embed(obs["ids", "item"])
+            move_emb_raw = model.move_embed(obs["ids", "moves"])
+            move_summary = model.move_pool(move_emb_raw)
+
+            entity_input = torch.cat(
+                [obs["entities"], species_emb, ability_emb, item_emb, move_summary], dim=-1
+            )
+            entity_tokens = model.entity_proj(entity_input)  # [B, N, d_model]
+
+            cls = model.cls_token.unsqueeze(0).unsqueeze(0).expand(batch_size, 1, -1)
+            field_tok = model.field_proj(obs["field"]).unsqueeze(1)
+            side_p1 = model.side_proj(obs["sides"][:, 0]).unsqueeze(1)
+            side_p2 = model.side_proj(obs["sides"][:, 1]).unsqueeze(1)
+            meta_tok = model.meta_proj(obs["scalars"]).unsqueeze(1)
+
+        return {
+            "cls": cls[:, 0],            # [B, d_model]
+            "field": field_tok[:, 0],     # [B, d_model]
+            "side_p1": side_p1[:, 0],     # [B, d_model]
+            "side_p2": side_p2[:, 0],     # [B, d_model]
+            "meta": meta_tok[:, 0],       # [B, d_model]
+            "entities": entity_tokens,    # [B, N, d_model]
+        }
+
+    def test_token_positions_synthetic(self):
+        """Synthetic bundle: each position in the backbone input matches its expected token."""
+        model = CVPN()
+        model.eval()
+        n_entities = 8
+        obs = _make_dummy_bundle(n_entities, phase="move")
+
+        seq = self._capture_backbone_input(model, obs)  # [1, 5+N, d_model]
+        expected = self._compute_expected_tokens(model, obs)
+
+        torch.testing.assert_close(seq[:, 0], expected["cls"], msg="Position 0 must be CLS")
+        torch.testing.assert_close(seq[:, 1], expected["field"], msg="Position 1 must be field")
+        torch.testing.assert_close(seq[:, 2], expected["side_p1"], msg="Position 2 must be side_p1")
+        torch.testing.assert_close(seq[:, 3], expected["side_p2"], msg="Position 3 must be side_p2")
+        torch.testing.assert_close(seq[:, 4], expected["meta"], msg="Position 4 must be meta")
+        torch.testing.assert_close(
+            seq[:, 5:], expected["entities"], msg="Positions 5+ must be entity tokens"
+        )
+
+    def test_token_positions_real_fixture(self, tp_obs):
+        """Real-fixture team-preview bundle: same ordering convention holds."""
+        model = CVPN()
+        model.eval()
+
+        seq = self._capture_backbone_input(model, tp_obs)
+        expected = self._compute_expected_tokens(model, tp_obs)
+
+        torch.testing.assert_close(seq[:, 0], expected["cls"], msg="Position 0 must be CLS")
+        torch.testing.assert_close(seq[:, 1], expected["field"], msg="Position 1 must be field")
+        torch.testing.assert_close(seq[:, 2], expected["side_p1"], msg="Position 2 must be side_p1")
+        torch.testing.assert_close(seq[:, 3], expected["side_p2"], msg="Position 3 must be side_p2")
+        torch.testing.assert_close(seq[:, 4], expected["meta"], msg="Position 4 must be meta")
+        torch.testing.assert_close(
+            seq[:, 5:], expected["entities"], msg="Positions 5+ must be entity tokens"
+        )
+
+    def test_cls_is_learned_parameter_not_input_derived(self):
+        """Position 0 must be the raw cls_token parameter, not derived from any input."""
+        model = CVPN()
+        model.eval()
+
+        # Two different inputs must produce the same CLS value at position 0
+        obs_a = _make_dummy_bundle(6, phase="move")
+        obs_b = _make_dummy_bundle(10, phase="teamPreview")
+
+        seq_a = self._capture_backbone_input(model, obs_a)
+        seq_b = self._capture_backbone_input(model, obs_b)
+
+        torch.testing.assert_close(
+            seq_a[:, 0], seq_b[:, 0],
+            msg="CLS token at position 0 must be identical regardless of input"
+        )
+        # And it must equal the raw parameter
+        torch.testing.assert_close(
+            seq_a[0, 0], model.cls_token,
+            msg="CLS position must equal the learned nn.Parameter"
+        )
+
+    def test_sides_not_swapped(self):
+        """Position 2 is side_p1, position 3 is side_p2 — not the reverse.
+
+        We verify by constructing an obs where sides[0] != sides[1] and checking
+        that the projections land in the correct positions.
+        """
+        model = CVPN()
+        model.eval()
+        obs = _make_dummy_bundle(8, phase="move")
+        # Make the two sides distinguishable
+        obs["sides"][0] = torch.ones(SIDE_FEATURE_DIM) * 10.0
+        obs["sides"][1] = torch.ones(SIDE_FEATURE_DIM) * -10.0
+
+        seq = self._capture_backbone_input(model, obs)
+
+        with torch.no_grad():
+            expected_p1 = model.side_proj(obs["sides"][0])
+            expected_p2 = model.side_proj(obs["sides"][1])
+
+        torch.testing.assert_close(seq[0, 2], expected_p1, msg="Position 2 must be side_p1")
+        torch.testing.assert_close(seq[0, 3], expected_p2, msg="Position 3 must be side_p2")
+        # Confirm they are actually different (the test is meaningful)
+        assert not torch.allclose(seq[0, 2], seq[0, 3]), "Sides must be distinguishable"
+
+    def test_key_padding_mask_alignment(self):
+        """The 5 global prefix positions are always attended; entity positions mirror obs padding_mask."""
+        model = CVPN()
+        model.eval()
+        n = 10
+        obs = _make_dummy_bundle(n, phase="move")
+        # Make a non-trivial padding mask: first 6 real, last 4 padded
+        pmask = torch.zeros(n, dtype=torch.bool)
+        pmask[:6] = True
+        obs["padding_mask"] = pmask
+
+        # Capture the key_padding_mask sent to the backbone
+        captured = {}
+
+        def hook(module, args, kwargs):
+            captured["kpm"] = kwargs.get("src_key_padding_mask")
+            if captured["kpm"] is None and len(args) > 1:
+                captured["kpm"] = args[1]
+
+        handle = model.backbone.register_forward_pre_hook(hook, with_kwargs=True)
+        try:
+            with torch.no_grad():
+                model(obs)
+        finally:
+            handle.remove()
+
+        kpm = captured["kpm"]  # [1, 5+N] — True = IGNORE in torch convention
+        assert kpm is not None, "Key padding mask must be passed to backbone"
+
+        # Global prefix (first 5): never ignored → all False
+        assert not kpm[0, :_N_GLOBAL_TOKENS].any(), "Global prefix tokens must never be ignored"
+
+        # Entity portion: inverted obs padding_mask
+        entity_kpm = kpm[0, _N_GLOBAL_TOKENS:]
+        expected_entity_ignore = ~pmask
+        torch.testing.assert_close(
+            entity_kpm, expected_entity_ignore,
+            msg="Entity key-padding mask must be the inverse of obs padding_mask"
+        )

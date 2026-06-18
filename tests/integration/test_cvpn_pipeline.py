@@ -111,6 +111,64 @@ class TestCVPNMovePhase:
 # ---------------------------------------------------------------------------
 
 
+class TestCVPNForceSwitch:
+    """Advance to a forceSwitch state and forward through the CVPN."""
+
+    def test_force_switch_forward(self, sim_client: SimClient, team_a: list, team_b: list, cvpn_model):
+        """Play turns until a forceSwitch phase appears, then encode and forward.
+
+        Uses aggressive moves and enough turns to produce a KO. If no
+        forceSwitch occurs within 20 turns, the test is skipped (seed-dependent).
+        """
+        rng = random.Random(123)
+        live, _ = sim_client.new_battle(team_a, team_b, seed=[5, 6, 7, 8])
+        session, root, view = sim_client.open_search(from_handle=live)
+        try:
+            cur = root
+            found_force_switch = False
+
+            for _ in range(20):
+                if view.terminal:
+                    break
+
+                if view.phase == "forceSwitch":
+                    found_force_switch = True
+                    for perspective in view.to_move:
+                        obs = encoder.encode(view, perspective=perspective)
+                        with torch.no_grad():
+                            policy, value = cvpn_model(obs)
+
+                        # Shape and range checks
+                        assert policy.shape == (action_space.A,)
+                        assert value.shape == ()
+                        assert -1.0 <= value.item() <= 1.0
+
+                        # Team-preview region should be all -inf
+                        tp_region = policy[:action_space.TEAM_PREVIEW_COUNT]
+                        assert (tp_region == float("-inf")).all()
+
+                        # Legal logits should be finite
+                        mask = obs["action_mask"]
+                        assert torch.isfinite(policy[mask]).all(), "Legal logits should be finite in forceSwitch"
+
+                        # Probs over legal actions sum to ~1
+                        probs = torch.softmax(policy, dim=-1)
+                        legal_sum = probs[mask].sum()
+                        assert legal_sum.item() == pytest.approx(1.0, abs=1e-4)
+                    break
+
+                # Advance with default moves
+                choices = dict.fromkeys(view.to_move, "default")
+                seed = [rng.randint(0, 0xFFFF) for _ in range(4)]
+                res = sim_client.step(cur, choices, seed=seed)
+                cur, view = res.child, res.view
+
+            if not found_force_switch:
+                pytest.skip("No forceSwitch phase encountered with this seed — seed-dependent")
+        finally:
+            sim_client.close_search(session)
+
+
 class TestCVPNMultiTurn:
     """Play several turns with default moves, encoding and forwarding each state."""
 

@@ -188,8 +188,6 @@ class CVPN(nn.Module):
             - policy_logits: [A] (unbatched) or [B, A] — illegal entries at -inf
             - value: scalar [] (unbatched) or [B] — in [-1, 1]
         """
-        cfg = self.config
-
         # Handle both batched and unbatched inputs uniformly
         unbatched = obs.batch_size == torch.Size([])
         if unbatched:

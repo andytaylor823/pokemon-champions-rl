@@ -121,7 +121,6 @@ class TestCVPNMultiTurn:
         try:
             cur = root
             turns_processed = 0
-            encode_errors = 0
 
             for _ in range(8):
                 if view.terminal:
@@ -129,13 +128,7 @@ class TestCVPNMultiTurn:
 
                 # Encode and forward from both perspectives
                 for perspective in view.to_move:
-                    try:
-                        obs = encoder.encode(view, perspective=perspective)
-                    except ValueError:
-                        # Pre-existing action_space gap (e.g. unhandled target
-                        # type "allies") — skip this perspective but keep playing
-                        encode_errors += 1
-                        continue
+                    obs = encoder.encode(view, perspective=perspective)
 
                     with torch.no_grad():
                         policy, value = cvpn_model(obs)

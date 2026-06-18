@@ -237,6 +237,9 @@ class TestValidTargets:
     def test_any_targets_all_three(self):
         assert _valid_targets_for("any") == [1, 2, -1]
 
+    def test_adjacent_foe_targets_both_foes(self):
+        assert _valid_targets_for("adjacentFoe") == [1, 2]
+
     def test_spread_moves_use_canonical_target(self):
         assert _valid_targets_for("allAdjacentFoes") == [1]
         assert _valid_targets_for("allAdjacent") == [1]
@@ -250,6 +253,13 @@ class TestValidTargets:
         assert _valid_targets_for("adjacentAllyOrSelf") == [-1]
         assert _valid_targets_for("allySide") == [-1]
         assert _valid_targets_for("allyTeam") == [-1]
+        assert _valid_targets_for("allies") == [-1]
+
+    def test_random_normal_targeting(self):
+        assert _valid_targets_for("randomNormal") == [1]
+
+    def test_foe_side_targeting(self):
+        assert _valid_targets_for("foeSide") == [1]
 
     def test_unknown_raises_error(self):
         with pytest.raises(ValueError, match="Unknown Showdown target type"):

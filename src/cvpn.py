@@ -255,7 +255,7 @@ class CVPN(nn.Module):
         """
         cfg = self.config
         # Initialize all logits to -inf, then write both heads into their regions
-        logits = torch.full((cls_out.shape[0], cfg.action_dim), float("-inf"), device=cls_out.device)
+        logits = torch.full((cls_out.shape[0], cfg.action_dim), float("-inf"), device=cls_out.device, dtype=cls_out.dtype)
         logits[:, TEAM_PREVIEW_OFFSET:TEAM_PREVIEW_OFFSET + cfg.team_preview_count] = self.tp_head(cls_out)
         logits[:, MOVE_PHASE_OFFSET:MOVE_PHASE_OFFSET + cfg.move_phase_count] = self.mp_head(cls_out)
         return logits.masked_fill(~action_mask, float("-inf"))

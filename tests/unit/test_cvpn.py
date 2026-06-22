@@ -1159,6 +1159,26 @@ class TestAssemblePolicyDirect:
 
         assert not torch.allclose(logits_a, logits_b), "Different CLS inputs must produce different logits"
 
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+    def test_output_dtype_matches_cls_out_dtype(self, dtype):
+        """Logits must inherit cls_out's dtype — no silent upcast to float32 under AMP/bf16."""
+        model = CVPN()
+        model.eval()
+        # Cast head weights to the target dtype so head outputs match
+        model.tp_head = model.tp_head.to(dtype)
+        model.mp_head = model.mp_head.to(dtype)
+
+        cls_out = torch.randn(1, model.config.d_model, dtype=dtype)
+        all_legal = torch.ones(1, A, dtype=torch.bool)
+
+        with torch.no_grad():
+            logits = model._assemble_policy(cls_out, all_legal)
+
+        assert logits.dtype == dtype, (
+            f"Expected logits dtype {dtype}, got {logits.dtype} — "
+            "torch.full likely defaulted to float32"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Token ordering convention verification

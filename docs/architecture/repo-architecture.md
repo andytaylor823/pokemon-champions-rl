@@ -254,11 +254,13 @@ These are genuine forks the map deliberately leaves open; they belong in design 
 
 1. **Per-slot vs joint-team value head** (`state-encoding.md` §12.3 — "the hardest open question for Phase 4"). Per-slot independence (lean on attention) vs the proposed three-tier split where `value_from(embeddings, deal)` concatenates the sampled deal's per-slot embeddings. Affects `CVPN` internals and the training tuple, not the public `search()` interface.
 2. **Belief sampler smoothing/backoff** (`state-encoding.md` §9) — how to condition on 3+ constraints when exact matches run out.
-3. **Action head: flat joint vs per-Pokémon factored** (§3.6).
-4. **Tokenization of categoricals** (one-hot vs embeddings vs hybrid) — tuning behind the `ObsBundle` seam.
+3. **Action head: flat joint vs per-Pokémon factored** (§3.6). *→ Resolved (`cvpn.md` D4): phase-split heads (team-preview + move-phase) internally, assembled into a unified flat `[A]` masked output externally.*
+4. **Tokenization of categoricals** (one-hot vs embeddings vs hybrid) — tuning behind the `ObsBundle` seam. *→ Resolved (`encoder.md` Decision 1 / `cvpn.md` D8): hybrid — IDs for high-cardinality (species/ability/item/moves), one-hot for low-cardinality; CVPN owns the embedding tables.*
 5. **Search/MCCFR budgets, chance-bucket granularity, K candidates per slot** — all empirical; the Opus-4.6 docs give starting guesses, not commitments.
 6. **Self-play parallelism** (Ray vs multiprocessing) and **inference serving** (in-worker net vs batched server).
 7. **The runtime-boundary benchmark** (§3.1) — validate the handle-based Node worker's per-step latency before committing to Python-orchestrated search at self-play scale.
+8. **Action-space canonicalization** (resolved, deferred; decided in the CVPN grilling). Collapse symmetric orderings to one canonical action — team-preview lead-pair and bench-pair order, and the double-faint forced-switch order, are all immaterial (A+B ≡ B+A). Team preview `360 → C(6,2)·C(4,2) = 90`; `A → ~819`. Lives in `action_space` (canonical index + deterministic canonical→Showdown-string expansion). The `CVPN` is built against `A = 1089` first and absorbs this for free (head widths derive from `action_space` constants). See `cvpn.md`.
+9. **Adaptive search compute** (deferred; decided in the CVPN grilling). Only a single-legal-move skip is planned initially (`search.md`); intelligent early-stopping (e.g. σ̄-convergence) and dynamic per-turn time allocation are deferred, and KataGo-style Playout Cap Randomization for self-play throughput is deferred (`self-play.md`). TODO: study AlphaGo Lee-Sedol-match & Lc0 dynamic time allocation before building the 60 s-turn time manager.
 
 ---
 

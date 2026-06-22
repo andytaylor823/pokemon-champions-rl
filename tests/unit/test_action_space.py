@@ -14,6 +14,7 @@ from action_space import (
     MoveAction,
     PassAction,
     SwitchAction,
+    _TARGET_TYPE_MAP,
     _choice_to_slot_action,
     _index_to_slot_action,
     _legal_switches,
@@ -237,6 +238,9 @@ class TestValidTargets:
     def test_any_targets_all_three(self):
         assert _valid_targets_for("any") == [1, 2, -1]
 
+    def test_adjacent_foe_targets_both_foes(self):
+        assert _valid_targets_for("adjacentFoe") == [1, 2]
+
     def test_spread_moves_use_canonical_target(self):
         assert _valid_targets_for("allAdjacentFoes") == [1]
         assert _valid_targets_for("allAdjacent") == [1]
@@ -250,6 +254,13 @@ class TestValidTargets:
         assert _valid_targets_for("adjacentAllyOrSelf") == [-1]
         assert _valid_targets_for("allySide") == [-1]
         assert _valid_targets_for("allyTeam") == [-1]
+        assert _valid_targets_for("allies") == [-1]
+
+    def test_random_normal_targeting(self):
+        assert _valid_targets_for("randomNormal") == [1]
+
+    def test_foe_side_targeting(self):
+        assert _valid_targets_for("foeSide") == [1]
 
     def test_unknown_raises_error(self):
         with pytest.raises(ValueError, match="Unknown Showdown target type"):
@@ -769,3 +780,139 @@ class TestBenchStates:
         # Slot1 -> bench1, slot2 -> bench2 should be legal
         cross = MOVE_PHASE_OFFSET + sw1 * ACTIONS_PER_SLOT + sw2
         assert mask[cross], "Different switch targets should be allowed"
+
+
+# ---------------------------------------------------------------------------
+# Target type map exhaustiveness
+# ---------------------------------------------------------------------------
+
+
+class TestTargetTypeMapExhaustive:
+    """_TARGET_TYPE_MAP covers all known Showdown target types."""
+
+    # The canonical set of target types emitted by the Showdown engine
+    KNOWN_TARGET_TYPES = frozenset({
+        "normal", "any", "adjacentFoe", "allAdjacentFoes", "allAdjacent",
+        "all", "self", "adjacentAlly", "adjacentAllyOrSelf", "allySide",
+        "allyTeam", "allies", "scripted", "randomNormal", "foeSide",
+    })
+
+    def test_map_keys_cover_all_known_types(self):
+        """Every known Showdown target type has an entry in the map."""
+        missing = self.KNOWN_TARGET_TYPES - set(_TARGET_TYPE_MAP.keys())
+        assert missing == set(), f"Missing target types in _TARGET_TYPE_MAP: {missing}"
+
+    def test_no_empty_target_lists(self):
+        """Every map entry should produce at least one valid target."""
+        for target_type, targets in _TARGET_TYPE_MAP.items():
+            assert len(targets) >= 1, f"Target type {target_type!r} maps to empty list"
+
+    def test_all_targets_are_valid_integers(self):
+        """Every target in the map must be one of {1, 2, -1}."""
+        valid = {1, 2, -1}
+        for target_type, targets in _TARGET_TYPE_MAP.items():
+            for t in targets:
+                assert t in valid, f"Target type {target_type!r} has invalid target {t}"
+
+
+# ---------------------------------------------------------------------------
+# New target types through legal_mask
+# ---------------------------------------------------------------------------
+
+
+class TestNewTargetTypesInMask:
+    """End-to-end legal_mask tests for target types added in this branch."""
+
+    def test_adjacent_foe_fewer_targets_than_normal(self):
+        """adjacentFoe gives 2 targets (both foes), not 3 like normal (foes + ally)."""
+        # Slot 1: adjacentFoe move (2 targets); Slot 2: normal move (3 targets)
+        request = {
+            "active": [
+                {"moves": [{"id": "thunderbolt", "pp": 5, "target": "adjacentFoe"}]},
+                {"moves": [{"id": "heatwave", "pp": 5, "target": "normal"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        assert mask[MOVE_PHASE_OFFSET:].any(), "Should have legal actions"
+
+        # Count slot1 move actions (move_idx=0 with targets 1 and 2 but NOT -1)
+        move0_t1 = _slot_action_to_index(0, 1, False, None)
+        move0_t2 = _slot_action_to_index(0, 2, False, None)
+        move0_tally = _slot_action_to_index(0, -1, False, None)
+
+        # Ally target (-1) should NOT be legal for adjacentFoe in slot 1
+        any_slot1_ally = any(
+            mask[MOVE_PHASE_OFFSET + move0_tally * ACTIONS_PER_SLOT + s2]
+            for s2 in range(ACTIONS_PER_SLOT)
+        )
+        assert not any_slot1_ally, "adjacentFoe should not allow ally targeting"
+
+        # Foe targets should be legal for slot 1
+        any_slot1_foe1 = any(
+            mask[MOVE_PHASE_OFFSET + move0_t1 * ACTIONS_PER_SLOT + s2]
+            for s2 in range(ACTIONS_PER_SLOT)
+        )
+        any_slot1_foe2 = any(
+            mask[MOVE_PHASE_OFFSET + move0_t2 * ACTIONS_PER_SLOT + s2]
+            for s2 in range(ACTIONS_PER_SLOT)
+        )
+        assert any_slot1_foe1, "adjacentFoe should allow foe-left targeting"
+        assert any_slot1_foe2, "adjacentFoe should allow foe-right targeting"
+
+    def test_random_normal_single_target_in_mask(self):
+        """randomNormal produces only canonical target 1 (engine picks actual target)."""
+        request = {
+            "active": [
+                {"moves": [{"id": "outrage", "pp": 5, "target": "randomNormal"}]},
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Only target 1 should be legal for slot 1's move
+        move0_t1 = _slot_action_to_index(0, 1, False, None)
+        move0_t2 = _slot_action_to_index(0, 2, False, None)
+        move0_tally = _slot_action_to_index(0, -1, False, None)
+
+        any_t1 = any(mask[MOVE_PHASE_OFFSET + move0_t1 * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+        any_t2 = any(mask[MOVE_PHASE_OFFSET + move0_t2 * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+        any_ally = any(mask[MOVE_PHASE_OFFSET + move0_tally * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+
+        assert any_t1, "randomNormal should allow canonical target 1"
+        assert not any_t2, "randomNormal should not allow target 2"
+        assert not any_ally, "randomNormal should not allow ally target"
+
+    def test_foe_side_single_target_in_mask(self):
+        """foeSide produces only canonical target 1 (hazards on opposing side)."""
+        request = {
+            "active": [
+                {"moves": [{"id": "stealthrock", "pp": 5, "target": "foeSide"}]},
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        move0_t1 = _slot_action_to_index(0, 1, False, None)
+        move0_t2 = _slot_action_to_index(0, 2, False, None)
+
+        any_t1 = any(mask[MOVE_PHASE_OFFSET + move0_t1 * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+        any_t2 = any(mask[MOVE_PHASE_OFFSET + move0_t2 * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+
+        assert any_t1, "foeSide should allow canonical target 1"
+        assert not any_t2, "foeSide should not allow target 2"

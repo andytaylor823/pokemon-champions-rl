@@ -262,6 +262,8 @@ With chance bucketing (~4 outcomes per chance node), ~20 PUCT expansions per sea
 - At ~1–5 ms per pass (small Transformer on GPU): 20–250 ms per decision.
 - Within a 60-second turn timer, this is feasible with margin for the CFR+ iterations (which are the cheap arithmetic part).
 
+> **Revised by the Phase-1 Search design (`docs/plans/search.md` §3, §9):** this estimate assumed *sequential* single-child expansion. With the simultaneous-move turn-grid, expanding one turn-node evaluates ~`k²` joint cells (k ≈ 6 → ~36 leaf states), batched into ~one forward — so per-*search* CVPN work scales with `k²` and exceeds the ~20–50 figure here. Wall-clock stays ~one forward per expansion via batching, but self-play throughput will feel the `k²` factor; revisit `k` / expansion budget after measurement (`vibes-decisions.md` §9.2, §9.7).
+
 ---
 
 ## 9. Summary: what scales, what doesn't, and how to fix it

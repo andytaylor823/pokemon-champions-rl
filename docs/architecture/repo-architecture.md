@@ -190,6 +190,8 @@ The caller samples one joint action from `strategy`, plays it via `SimClient`, a
 
 **Depth.** The deepest module — vast hidden complexity behind a single call, and the largest source of leverage.
 
+> **Phase-1 search decision (recorded in `docs/plans/search.md`):** Phase 1 builds **GT-CFR directly in the perfect-information regime** — the MCTS pit-stop named in the milestones is skipped, because simultaneous moves make even perfect-info Pokémon an imperfect-information (matrix) game, and the toys + CVPN are already GT-CFR-shaped. See `vibes-decisions.md` §9.1, §9.6–§9.10.
+
 ### 3.6 The action space (a shared contract, not a module)
 
 A **stable canonical index `0..A`** over all joint actions, with legality expressed as a mask (choice-lock, disable, taunt, no-PP, forced-switch all flip mask bits). Three modules code against it: `Encoder` (emits `action_mask`), `CVPN` (policy head width `A`), and `SimClient` (translates an index ↔ a Showdown choice string like `"move heatwave 1, move protect"`). The index↔choice-string translation lives inside `SimClient`. Size ≈ ~100 joint actions/turn (*tentative*; `agent/overview.mdc` §Action Space). Open sub-decision: a single flat joint head vs **per-Pokémon factored heads**.

@@ -244,7 +244,7 @@ class TestVolatileCounters:
 
     def test_shape(self):
         vec = _volatile_counters(_minimal_mon())
-        assert vec.shape == (3,)
+        assert vec.shape == (4,)
 
     def test_all_zero_for_default(self):
         vec = _volatile_counters(_minimal_mon())
@@ -722,6 +722,32 @@ class TestVolatileCountersExhaustive:
         assert vec[0].item() == pytest.approx(50 / 200)
         assert vec[1].item() == pytest.approx(3 / 6)
         assert vec[2].item() == pytest.approx(4 / 20)
+        assert vec[3].item() == pytest.approx(0.0)
+
+    def test_yawn_active(self):
+        mon = _minimal_mon(
+            volatiles=["yawn"],
+            volatileDetails={"yawn": {"time": 1}},
+        )
+        vec = _volatile_counters(mon)
+        assert vec[3].item() == pytest.approx(1.0)
+
+    def test_yawn_absent(self):
+        mon = _minimal_mon(volatiles=[], volatileDetails={})
+        vec = _volatile_counters(mon)
+        assert vec[3].item() == pytest.approx(0.0)
+
+    def test_yawn_with_other_volatiles(self):
+        mon = _minimal_mon(
+            volatiles=["substitute", "stall", "yawn"],
+            volatileDetails={"substitute": {"hp": 80}, "stall": {"counter": 2}, "yawn": {"time": 1}},
+            activeTurns=3,
+        )
+        vec = _volatile_counters(mon)
+        assert vec[0].item() == pytest.approx(80 / 200)
+        assert vec[1].item() == pytest.approx(2 / 6)
+        assert vec[2].item() == pytest.approx(3 / 20)
+        assert vec[3].item() == pytest.approx(1.0)
 
 
 class TestVolatilesDoNotCrashEncoder:
@@ -759,6 +785,7 @@ class TestVolatilesDoNotCrashEncoder:
             "taunt": {"duration": 2},
             "perishsong": {"duration": 1},
             "confusion": {"time": 2},
+            "yawn": {"time": 1},
         }
         mon = _minimal_mon(
             volatiles=list(details.keys()),
@@ -772,6 +799,7 @@ class TestVolatilesDoNotCrashEncoder:
         assert vec[0].item() == pytest.approx(80 / 200)
         assert vec[1].item() == pytest.approx(2 / 6)
         assert vec[2].item() == pytest.approx(5 / 20)
+        assert vec[3].item() == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1355,8 +1383,8 @@ class TestEncodePhaseVariations:
 
     def test_entity_feature_dim_value(self):
         """Sentinel-derived ENTITY_FEATURE_DIM matches expected sum of sub-encoder widths."""
-        # 1(hp) + 6(stats) + 7(boosts) + 7(status) + 25(nature) + 8(moves) + 3(volatile) + 8(flags) = 65
-        assert ENTITY_FEATURE_DIM == 65
+        # 1(hp) + 6(stats) + 7(boosts) + 7(status) + 25(nature) + 8(moves) + 4(volatile) + 8(flags) = 66
+        assert ENTITY_FEATURE_DIM == 66
 
     def test_field_feature_dim_value(self):
         """FIELD_FEATURE_DIM = 5(weather) + 5(terrain) + 2(trick_room) + 1(gravity) = 13."""

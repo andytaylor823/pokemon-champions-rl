@@ -180,13 +180,15 @@ def _move_pp_flags(mon: PokemonSnapshot) -> torch.Tensor:
 
 
 def _volatile_counters(mon: PokemonSnapshot) -> torch.Tensor:
-    """Substitute HP, stall counter, active turns. [3]"""
+    """Substitute HP, stall counter, active turns, yawn (drowsy). [4]"""
     sub_data = mon.volatileDetails.get("substitute")
     sub_hp = (sub_data.hp or 0) / MAX_STAT if sub_data and sub_data.hp is not None else 0.0
     stall_data = mon.volatileDetails.get("stall")
     stall = (stall_data.counter or 0) / 6.0 if stall_data and stall_data.counter is not None else 0.0
     active_turns = mon.activeTurns / MAX_TURNS
-    return torch.tensor([sub_hp, stall, active_turns])
+    # Yawn sets a 1-turn drowsy countdown; the decision-critical signal is simply "is drowsy"
+    yawn = 1.0 if "yawn" in mon.volatiles else 0.0
+    return torch.tensor([sub_hp, stall, active_turns, yawn])
 
 
 def _slot_flags(mon: PokemonSnapshot, is_opponent: bool) -> torch.Tensor:

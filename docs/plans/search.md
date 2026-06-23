@@ -286,7 +286,7 @@ CFR improvement operator (**bootstrapping**).
 | Grid width per player | `k` ≈ 6 *(vibes 9.7)* | `k²` token bundles per expanded TurnNode |
 | Chance children per cell | ≤ `K` = 5 *(vibes 9.8)* | uniform-weighted sampled worlds |
 
-**Throughput flag.** A simultaneous turn costs ~`k²` leaf evaluations per expanded node — well
+**Throughput flag.** A simultaneous turn costs ~k² leaf evaluations per expanded node — well
 above the ~20–50-CVPN-passes-per-search figure in `search-nn-interface.md` §8.2, which assumed
 sequential single-child expansion. Batching keeps wall-clock at ~one forward per expansion, but
 self-play **throughput** (many actors, many decisions) will feel the `k²` factor. Revisit
@@ -341,8 +341,12 @@ All deferred deliberately; none blocks Phase 1.
    gains a per-world traversal; `BeliefModel` activates (`repo-architecture.md` §3.4).
 3. **Vector value head** — the scalar becomes one CFV per candidate; one forward yields every CFV
    the regret update needs (the three-tier split, `search-nn-interface.md` §7).
-4. **Action abstraction quality** — fixed top-k vs. a grow-on-demand width; whether `k` should
-   adapt to how sharp the policy prior is (vibes 9.7).
+4. **Action abstraction quality / top-k local maxima** — fixed top-k selects only the actions
+   the CVPN's current policy prior already favors, which converges fast but is liable to get
+   stuck in local maxima (the network never sees actions it never searches). Mitigations to
+   evaluate: epsilon-greedy slot injection (reserve 1–2 top-k slots for uniformly-sampled legal
+   actions), progressive widening (start narrow, widen with visit count), periodic full-width
+   audit searches, or adapting `k` to how sharp/flat the prior is (vibes 9.7).
 5. **Budgets** — `expansion_budget`, `cfr_iters_per_expansion`, `c_puct`, `k`, `K` are all
    empirical; the values here are starting guesses, not commitments (vibes 9.2, 9.8, 9.10).
 

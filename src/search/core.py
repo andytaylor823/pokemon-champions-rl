@@ -22,9 +22,9 @@ import torch
 
 from action_space import A, legal_mask
 from encoder import encode
-from search.cfr import _cfr_update_recursive
-from search.expansion import _expand_turn_node, _puct_expand_one
-from search.strategy import _build_policy_target, _extract_average_strategy
+from search.cfr import cfr_update_recursive
+from search.expansion import expand_turn_node, puct_expand_one
+from search.strategy import build_policy_target, extract_average_strategy
 from search.types import SearchConfig, SearchResult, TurnNode
 
 if TYPE_CHECKING:
@@ -58,32 +58,30 @@ def search(
 
     # --- Single-legal-move skip ---
     sides = view.to_move
-    single_action: dict[str, int | None] = {}
+    forced_actions: dict[str, int] = {}
     all_single = True
 
     for s in sides:
         mask = legal_mask(view.legal.get(s), view.phase)
         legal_count = int(mask.sum())
         if legal_count == 1:
-            single_action[s] = int(np.argmax(mask))
-        elif legal_count == 0:
-            single_action[s] = None
+            forced_actions[s] = int(np.argmax(mask))
         else:
+            # 0 legal actions shouldn't happen for a to_move side in a non-terminal
+            assert legal_count > 0, f"Side {s} in to_move has 0 legal actions"
             all_single = False
+            break
 
     if all_single:
-        # Both sides have exactly one legal action — no search needed
+        # Every acting side has exactly one legal action — no search needed
         strategy: dict[str, dict[int, float]] = {}
         policy_target: dict[str, np.ndarray] = {}
         for s in sides:
-            if single_action[s] is not None:
-                strategy[s] = {single_action[s]: 1.0}  # type: ignore[dict-item]
-                pt = np.zeros(A, dtype=np.float32)
-                pt[single_action[s]] = 1.0  # type: ignore[index]
-                policy_target[s] = pt
-            else:
-                strategy[s] = {}
-                policy_target[s] = np.zeros(A, dtype=np.float32)
+            action_idx = forced_actions[s]
+            strategy[s] = {action_idx: 1.0}
+            pt = np.zeros(A, dtype=np.float32)
+            pt[action_idx] = 1.0
+            policy_target[s] = pt
 
         # Get a value estimate from CVPN for the training target
         with torch.no_grad():
@@ -100,10 +98,6 @@ def search(
         # Use the cloned root's view (it should match the provided view)
         effective_view = root_view if root_view is not None else view
 
-        # No acting sides — nothing to search
-        if not sides:
-            return SearchResult(strategy={}, value=0.0, policy_target={s: np.zeros(A, dtype=np.float32) for s in sides})
-
         root = TurnNode(
             handle=root_handle,
             view=effective_view,
@@ -111,31 +105,31 @@ def search(
         )
 
         # --- Expand root ---
-        _expand_turn_node(root, sim, net, root_session, config)
+        expand_turn_node(root, sim, net, config)
 
         # --- Main loop: alternate CFR+ updates and PUCT expansion ---
         for expansion_idx in range(config.expansion_budget):
             # Phase A: CFR+ updates over the frozen tree
             for t in range(1, config.cfr_iters_per_expansion + 1):
                 iteration_num = expansion_idx * config.cfr_iters_per_expansion + t
-                _cfr_update_recursive(root, iteration_num)
+                cfr_update_recursive(root, iteration_num)
 
             # Phase B: PUCT-guided expansion of one node
-            _puct_expand_one(root, sim, net, root_session, config)
+            puct_expand_one(root, sim, net, config)
 
         # --- Final CFR+ pass to compute the deep value ---
         # One more traversal to get the root's CFV under the converged strategy,
         # recursing through all expanded children (not just depth 1).
         final_iteration = config.expansion_budget * config.cfr_iters_per_expansion + 1
-        value_p1 = _cfr_update_recursive(root, final_iteration)
+        value_p1 = cfr_update_recursive(root, final_iteration)
 
         # --- Extract results ---
         strategy_out: dict[str, dict[int, float]] = {}
         policy_target_out: dict[str, np.ndarray] = {}
 
         for s in sides:
-            strategy_out[s] = _extract_average_strategy(root, s)
-            policy_target_out[s] = _build_policy_target(root, s)
+            strategy_out[s] = extract_average_strategy(root, s)
+            policy_target_out[s] = build_policy_target(root, s)
 
     finally:
         # Clean up the search session (frees all cloned handles)

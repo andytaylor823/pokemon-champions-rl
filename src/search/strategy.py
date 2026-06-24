@@ -16,38 +16,38 @@ if TYPE_CHECKING:
     from search.types import TurnNode
 
 
-def _extract_average_strategy(node: TurnNode, side: str) -> dict[int, float]:
+def extract_average_strategy(node: TurnNode, side: str) -> dict[int, float]:
     """Extract the average strategy sigma-bar for one side at a node.
 
     Returns a dict mapping canonical action indices to probabilities.
     """
-    if side not in node.strategy_sum or len(node.actions.get(side, [])) == 0:
+    info = node.info.get(side)
+    if info is None or len(info.actions) == 0:
         return {}
 
-    strategy_sum = node.strategy_sum[side]
-    total = strategy_sum.sum()
+    total = info.strategy_sum.sum()
 
     if total > 0:
-        probs = strategy_sum / total
+        probs = info.strategy_sum / total
     else:
         # No iterations ran — fall back to uniform over top-k
-        k = len(node.actions[side])
+        k = len(info.actions)
         probs = np.ones(k) / k
 
     result: dict[int, float] = {}
-    for idx, action in enumerate(node.actions[side]):
+    for idx, action in enumerate(info.actions):
         if probs[idx] > 0:
             result[action] = float(probs[idx])
     return result
 
 
-def _build_policy_target(node: TurnNode, side: str) -> np.ndarray:
+def build_policy_target(node: TurnNode, side: str) -> np.ndarray:
     """Build the full [A] policy target vector from the average strategy.
 
     Mass on the top-k support, zeros elsewhere.
     """
     target = np.zeros(A, dtype=np.float32)
-    strategy = _extract_average_strategy(node, side)
+    strategy = extract_average_strategy(node, side)
     for action_idx, prob in strategy.items():
         target[action_idx] = prob
     return target

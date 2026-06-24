@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def _regret_matching(cumulative_regret: np.ndarray) -> np.ndarray:
+def regret_matching(cumulative_regret: np.ndarray) -> np.ndarray:
     """Derive current strategy from cumulative regrets via regret matching+.
 
     Returns uniform distribution if no positive regret exists.
@@ -33,22 +33,24 @@ def _regret_matching(cumulative_regret: np.ndarray) -> np.ndarray:
     return np.ones_like(cumulative_regret) / len(cumulative_regret)
 
 
-def _cfr_update_recursive(node: TurnNode, iteration: int) -> float:
+def cfr_update_recursive(node: TurnNode, iteration: int) -> float:
     """Recursively run CFR+ update through the tree (depth-first).
 
-    Both sides always have valid arrays (guaranteed by _expand_turn_node's
+    Both sides always have valid InfoSets (guaranteed by _expand_turn_node's
     centralized no-op padding), so no conditional fallbacks are needed. For
     expanded children below ChanceNodes, recurses through outcome.node; for
     frontier leaves and terminals, uses outcome.leaf_value_p1.
 
     Returns p1's counterfactual value at this node.
     """
-    # Both sides always have valid arrays after expansion
-    sigma_p1 = _regret_matching(node.cumulative_regret["p1"])
-    sigma_p2 = _regret_matching(node.cumulative_regret["p2"])
+    info_p1 = node.info["p1"]
+    info_p2 = node.info["p2"]
 
-    k_p1 = len(node.actions["p1"])
-    k_p2 = len(node.actions["p2"])
+    sigma_p1 = regret_matching(info_p1.regret)
+    sigma_p2 = regret_matching(info_p2.regret)
+
+    k_p1 = len(info_p1.actions)
+    k_p2 = len(info_p2.actions)
     cfv_grid = np.zeros((k_p1, k_p2))
 
     # Fill the CFV grid: recurse into expanded children, use cached values otherwise
@@ -58,7 +60,7 @@ def _cfr_update_recursive(node: TurnNode, iteration: int) -> float:
             for outcome in chance.children:
                 # Recurse into expanded children; use CVPN/terminal value otherwise
                 if outcome.node is not None:
-                    child_val = _cfr_update_recursive(outcome.node, iteration)
+                    child_val = cfr_update_recursive(outcome.node, iteration)
                 else:
                     child_val = outcome.leaf_value_p1
                 child_values.append(child_val)
@@ -74,18 +76,17 @@ def _cfr_update_recursive(node: TurnNode, iteration: int) -> float:
     # Node value from p1's perspective
     node_value_p1 = float(sigma_p1 @ v_p1_actions)
 
-    # Update p1 regrets and strategy sum
-    # (single-action no-op sides compute zero instant regret — harmless)
+    # Update p1 regrets and strategy sum (single-action no-op sides compute zero instant regret)
     instant_regret_p1 = v_p1_actions - node_value_p1
-    node.cumulative_regret["p1"] = np.maximum(0.0, node.cumulative_regret["p1"] + instant_regret_p1)
-    node.strategy_sum["p1"] += iteration * sigma_p1
-    node.visit_counts["p1"] += 1
+    info_p1.regret = np.maximum(0.0, info_p1.regret + instant_regret_p1)
+    info_p1.strategy_sum += iteration * sigma_p1
+    info_p1.visits += 1
 
     # Update p2 regrets and strategy sum
     node_value_p2 = float(sigma_p2 @ v_p2_actions)
     instant_regret_p2 = v_p2_actions - node_value_p2
-    node.cumulative_regret["p2"] = np.maximum(0.0, node.cumulative_regret["p2"] + instant_regret_p2)
-    node.strategy_sum["p2"] += iteration * sigma_p2
-    node.visit_counts["p2"] += 1
+    info_p2.regret = np.maximum(0.0, info_p2.regret + instant_regret_p2)
+    info_p2.strategy_sum += iteration * sigma_p2
+    info_p2.visits += 1
 
     return node_value_p1

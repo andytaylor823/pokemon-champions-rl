@@ -6,6 +6,7 @@ Tests the core algorithmic components with mocked SimClient + CVPN:
 - PUCT selection logic
 - Average strategy extraction
 - Deep tree recursion through ChanceOutcome.node references
+- Regression: expansion actually deepens the tree (not stuck at depth 1)
 """
 from __future__ import annotations
 
@@ -18,16 +19,18 @@ import torch
 from search import (
     ChanceNode,
     ChanceOutcome,
+    InfoSet,
     SearchConfig,
     SearchResult,
     TurnNode,
-    _build_policy_target,
-    _cfr_update_recursive,
-    _extract_average_strategy,
-    _puct_scores,
-    _regret_matching,
+    build_policy_target,
+    cfr_update_recursive,
+    extract_average_strategy,
+    puct_scores,
+    regret_matching,
     search,
 )
+from search.expansion import puct_expand_one, puct_select_cell
 
 
 # ---------------------------------------------------------------------------
@@ -41,31 +44,31 @@ class TestRegretMatching:
     def test_uniform_when_all_zero(self):
         # All-zero regret -> uniform strategy
         regret = np.array([0.0, 0.0, 0.0])
-        strategy = _regret_matching(regret)
+        strategy = regret_matching(regret)
         np.testing.assert_allclose(strategy, [1 / 3, 1 / 3, 1 / 3])
 
     def test_uniform_when_all_negative(self):
         # Negative regrets are treated as zero -> uniform
         regret = np.array([-1.0, -2.0, -3.0])
-        strategy = _regret_matching(regret)
+        strategy = regret_matching(regret)
         np.testing.assert_allclose(strategy, [1 / 3, 1 / 3, 1 / 3])
 
     def test_proportional_to_positive_regret(self):
         # Positive regrets -> proportional strategy
         regret = np.array([3.0, 1.0, 0.0])
-        strategy = _regret_matching(regret)
+        strategy = regret_matching(regret)
         np.testing.assert_allclose(strategy, [0.75, 0.25, 0.0])
 
     def test_single_positive_regret(self):
         # Only one positive regret -> all mass on that action
         regret = np.array([0.0, 5.0, 0.0])
-        strategy = _regret_matching(regret)
+        strategy = regret_matching(regret)
         np.testing.assert_allclose(strategy, [0.0, 1.0, 0.0])
 
     def test_probabilities_sum_to_one(self):
         # Always sums to 1
         regret = np.array([2.0, 3.0, 5.0, 0.0])
-        strategy = _regret_matching(regret)
+        strategy = regret_matching(regret)
         assert abs(strategy.sum() - 1.0) < 1e-10
 
 
@@ -98,11 +101,22 @@ class TestCFRConvergence:
         )
 
         # 2 actions per player
-        node.actions = {"p1": [0, 1], "p2": [0, 1]}
-        node.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([0.5, 0.5])}
-        node.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(2)}
-        node.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(2)}
-        node.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(2, dtype=np.int64)}
+        node.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+        }
         node.expanded = True
 
         # Payoff matrix from p1's perspective: (H,H)=+1, (H,T)=-1, (T,H)=-1, (T,T)=+1
@@ -121,11 +135,11 @@ class TestCFRConvergence:
 
         # Run many CFR+ iterations
         for t in range(1, 1001):
-            _cfr_update_recursive(node, t)
+            cfr_update_recursive(node, t)
 
         # Extract average strategy
-        sigma_bar_p1 = _extract_average_strategy(node, "p1")
-        sigma_bar_p2 = _extract_average_strategy(node, "p2")
+        sigma_bar_p1 = extract_average_strategy(node, "p1")
+        sigma_bar_p2 = extract_average_strategy(node, "p2")
 
         # Both should be close to 50/50
         assert abs(sigma_bar_p1.get(0, 0) - 0.5) < 0.05
@@ -162,11 +176,22 @@ class TestCFRConvergence:
             to_move=["p1", "p2"],
         )
 
-        node.actions = {"p1": [0, 1], "p2": [0, 1]}
-        node.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([0.5, 0.5])}
-        node.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(2)}
-        node.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(2)}
-        node.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(2, dtype=np.int64)}
+        node.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+        }
         node.expanded = True
 
         # P1's payoffs: (U,L)=3, (U,R)=0, (D,L)=0, (D,R)=1
@@ -178,10 +203,10 @@ class TestCFRConvergence:
         }
 
         for t in range(1, 2001):
-            _cfr_update_recursive(node, t)
+            cfr_update_recursive(node, t)
 
-        sigma_bar_p1 = _extract_average_strategy(node, "p1")
-        sigma_bar_p2 = _extract_average_strategy(node, "p2")
+        sigma_bar_p1 = extract_average_strategy(node, "p1")
+        sigma_bar_p2 = extract_average_strategy(node, "p2")
 
         # P1 should play ~(0.25, 0.75), P2 should play ~(0.25, 0.75)
         assert abs(sigma_bar_p1.get(0, 0) - 0.25) < 0.05
@@ -203,16 +228,27 @@ class TestDeepRecursion:
     """
 
     def test_cfr_recurses_into_child_nodes(self):
-        """Values from depth-2 nodes propagate back up through _cfr_update_recursive."""
+        """Values from depth-2 nodes propagate back up through cfr_update_recursive."""
         mock_view = MagicMock()
 
         # Child node at depth 2: a 2x1 game with known payoffs
         child_node = TurnNode(handle=10, view=mock_view, to_move=["p1", "p2"])
-        child_node.actions = {"p1": [0, 1], "p2": [0]}
-        child_node.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([1.0])}
-        child_node.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(1)}
-        child_node.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(1)}
-        child_node.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(1, dtype=np.int64)}
+        child_node.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+        }
         child_node.expanded = True
         child_node.grid = {
             (0, 0): ChanceNode(children=[ChanceOutcome(handle=20, leaf_value_p1=0.9)]),
@@ -221,11 +257,22 @@ class TestDeepRecursion:
 
         # Root node: cell (0,0) points to the child, cell (1,0) is a leaf
         root = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
-        root.actions = {"p1": [0, 1], "p2": [0]}
-        root.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([1.0])}
-        root.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(1)}
-        root.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(1)}
-        root.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(1, dtype=np.int64)}
+        root.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+        }
         root.expanded = True
         root.grid = {
             # Cell (0,0): expanded child — CFR+ must recurse into it
@@ -236,19 +283,292 @@ class TestDeepRecursion:
 
         # Run CFR+ — should recurse into child_node
         for t in range(1, 101):
-            _cfr_update_recursive(root, t)
+            cfr_update_recursive(root, t)
 
         # Child must have been visited (regrets updated by recursion)
-        assert child_node.visit_counts["p1"].sum() > 0, "CFR+ did not recurse into child"
-        assert child_node.strategy_sum["p1"].sum() > 0, "Child strategy sum not accumulated"
+        assert child_node.info["p1"].visits.sum() > 0, "CFR+ did not recurse into child"
+        assert child_node.info["p1"].strategy_sum.sum() > 0, "Child strategy sum not accumulated"
 
         # The root's value for cell (0,0) should reflect the child's deep value,
         # not the stale leaf_value_p1=0.5. After CFR+ on the child, p1 should
         # favor action 0 (value 0.9) over action 1 (value 0.1), making the
         # child's converged value closer to 0.9 than to 0.5.
-        child_sigma = _regret_matching(child_node.cumulative_regret["p1"])
+        child_sigma = regret_matching(child_node.info["p1"].regret)
         child_value = float(child_sigma @ np.array([0.9, 0.1]))
         assert child_value > 0.5, f"Child value {child_value} should exceed stale leaf value 0.5"
+
+
+# ---------------------------------------------------------------------------
+# Tree deepening regression test (the blocker bug)
+# ---------------------------------------------------------------------------
+
+
+class TestTreeDeepening:
+    """Regression: expansion must actually deepen the tree past depth 1.
+
+    The original bug: _puct_select_cell only returned full ChanceNodes if they
+    had an outcome with node != None, but node is only set by deepening —
+    a chicken-and-egg deadlock that kept the tree permanently at depth 1.
+    """
+
+    def test_puct_select_returns_full_cell_with_frontier_leaves(self):
+        """A full ChanceNode whose outcomes are all frontier leaves (node=None) is expandable."""
+        mock_view = MagicMock()
+
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        node.info = {
+            "p1": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+        }
+        node.expanded = True
+
+        # A 1x1 grid with a full ChanceNode (K=2 children, all frontier leaves)
+        config = SearchConfig(max_chance_children=2)
+        node.grid = {
+            (0, 0): ChanceNode(children=[
+                ChanceOutcome(handle=1, leaf_value_p1=0.5),
+                ChanceOutcome(handle=2, leaf_value_p1=0.6),
+            ]),
+        }
+
+        # Select should return (0, 0) because frontier leaves are expandable
+        cell = puct_select_cell(node, config)
+        assert cell == (0, 0), f"Expected (0, 0) for full ChanceNode with frontier leaves, got {cell}"
+
+    def test_puct_expand_deepens_tree(self):
+        """puct_expand_one actually promotes a frontier leaf to a TurnNode (depth > 1)."""
+        mock_view = MagicMock()
+        mock_view.terminal = False
+        mock_view.to_move = ["p1", "p2"]
+        mock_view.legal = {
+            "p1": {"active": [{"moves": [{"id": "thunderbolt"}, {"id": "protect"}]}]},
+            "p2": {"active": [{"moves": [{"id": "flamethrower"}, {"id": "protect"}]}]},
+        }
+        mock_view.phase = "move"
+
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        node.info = {
+            "p1": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+        }
+        node.expanded = True
+
+        # Full ChanceNode (K=1) with one frontier leaf
+        config = SearchConfig(max_chance_children=1, k_actions=2)
+        node.grid = {
+            (0, 0): ChanceNode(children=[
+                ChanceOutcome(handle=5, leaf_value_p1=0.4),
+            ]),
+        }
+
+        # Mock SimClient and CVPN for the child expansion
+        mock_sim = MagicMock()
+        mock_sim.view.return_value = mock_view
+
+        mock_net = MagicMock()
+        # Policy logits + value for the child expansion
+        import action_space as as_mod
+        mock_net.return_value = (torch.zeros(2, as_mod.A), torch.tensor([0.5, 0.5]))
+
+        with patch("search.expansion.encode") as mock_encode, \
+             patch("search.expansion.collate_obs_bundles") as mock_collate, \
+             patch("search.expansion.legal_mask") as mock_legal_mask:
+            mock_encode.return_value = MagicMock()
+            mock_collate.return_value = MagicMock()
+            # Return a mask with 2 legal actions
+            mock_legal_mask.return_value = np.array([1, 1] + [0] * (as_mod.A - 2), dtype=np.float32)
+
+            result = puct_expand_one(node, mock_sim, mock_net, config=config)
+
+        # The expansion should have deepened: outcome.node should now be set
+        assert result is True, "puct_expand_one should have expanded a node"
+        outcome = node.grid[(0, 0)].children[0]
+        assert outcome.node is not None, "Frontier leaf was not promoted to a TurnNode"
+        assert outcome.node.expanded is True, "Child TurnNode should be marked expanded"
+
+    def test_puct_expand_descends_to_depth_3(self):
+        """puct_expand_one descends through a fully-expanded depth-2 node to reach depth 3.
+
+        The bug: puct_select_cell and puct_expand_one used the same predicate, so the
+        descent branch (node = expanded_child; depth += 1) was unreachable — the tree
+        was permanently capped at depth 2.
+        """
+        mock_view = MagicMock()
+        mock_view.terminal = False
+        mock_view.to_move = ["p1", "p2"]
+        mock_view.legal = {
+            "p1": {"active": [{"moves": [{"id": "thunderbolt"}, {"id": "protect"}]}]},
+            "p2": {"active": [{"moves": [{"id": "flamethrower"}, {"id": "protect"}]}]},
+        }
+        mock_view.phase = "move"
+
+        # Build a tree: root → (0,0) → depth-2 child (fully expanded, with its own
+        # full ChanceNode holding a frontier leaf that should be deepened to depth 3).
+        config = SearchConfig(max_chance_children=1, k_actions=2)
+
+        # Depth-2 child: expanded, with a full ChanceNode containing a frontier leaf
+        depth2_child = TurnNode(handle=10, view=mock_view, to_move=["p1", "p2"])
+        depth2_child.info = {
+            "p1": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+        }
+        depth2_child.expanded = True
+        # Full ChanceNode (K=1) with a frontier leaf — this is the depth-3 target
+        depth2_child.grid = {
+            (0, 0): ChanceNode(children=[
+                ChanceOutcome(handle=20, leaf_value_p1=0.7),
+            ]),
+        }
+
+        # Root: cell (0,0) has a full ChanceNode with ALL outcomes expanded (the depth-2 child)
+        root = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        root.info = {
+            "p1": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+        }
+        root.expanded = True
+        root.grid = {
+            (0, 0): ChanceNode(children=[
+                # All outcomes are expanded TurnNodes — triggers descent
+                ChanceOutcome(handle=10, leaf_value_p1=0.5, node=depth2_child),
+            ]),
+        }
+
+        # Mock SimClient and CVPN for the depth-3 expansion
+        mock_sim = MagicMock()
+        mock_sim.view.return_value = mock_view
+
+        mock_net = MagicMock()
+        import action_space as as_mod
+        mock_net.return_value = (torch.zeros(2, as_mod.A), torch.tensor([0.6, 0.6]))
+
+        with patch("search.expansion.encode") as mock_encode, \
+             patch("search.expansion.collate_obs_bundles") as mock_collate, \
+             patch("search.expansion.legal_mask") as mock_legal_mask:
+            mock_encode.return_value = MagicMock()
+            mock_collate.return_value = MagicMock()
+            mock_legal_mask.return_value = np.array([1, 1] + [0] * (as_mod.A - 2), dtype=np.float32)
+
+            result = puct_expand_one(root, mock_sim, mock_net, config=config)
+
+        # Descent should have gone root → depth2_child → expanded depth-3 leaf
+        assert result is True, "puct_expand_one should have expanded at depth 3"
+        depth3_outcome = depth2_child.grid[(0, 0)].children[0]
+        assert depth3_outcome.node is not None, "Depth-3 frontier leaf was not promoted"
+        assert depth3_outcome.node.expanded is True, "Depth-3 TurnNode should be expanded"
+
+    def test_puct_select_returns_saturated_cell_for_descent(self):
+        """A full ChanceNode where ALL outcomes are expanded is returned for descent."""
+        mock_view = MagicMock()
+
+        # Depth-2 child (fully expanded)
+        child_node = TurnNode(handle=10, view=mock_view, to_move=["p1", "p2"])
+        child_node.info = {
+            "p1": InfoSet.from_actions([0], np.array([1.0])),
+            "p2": InfoSet.from_actions([0], np.array([1.0])),
+        }
+        child_node.expanded = True
+        child_node.grid = {(0, 0): ChanceNode(children=[ChanceOutcome(handle=20, leaf_value_p1=0.5)])}
+
+        # Root with a single full cell where the outcome is already expanded
+        root = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        root.info = {
+            "p1": InfoSet.from_actions([0], np.array([1.0])),
+            "p2": InfoSet.from_actions([0], np.array([1.0])),
+        }
+        root.expanded = True
+        config = SearchConfig(max_chance_children=1)
+        root.grid = {
+            (0, 0): ChanceNode(children=[
+                ChanceOutcome(handle=10, leaf_value_p1=0.5, node=child_node),
+            ]),
+        }
+
+        # Select should return (0, 0) for descent even though all outcomes are expanded
+        cell = puct_select_cell(root, config)
+        assert cell == (0, 0), f"Expected (0, 0) for saturated cell (descent target), got {cell}"
+
+    def test_puct_select_skips_dead_cells(self):
+        """Cells where SimError occurred (chance is None in grid) are skipped."""
+        mock_view = MagicMock()
+
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        node.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.9, 0.1]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0],
+                prior=np.array([1.0]),
+                regret=np.zeros(1),
+                strategy_sum=np.zeros(1),
+                visits=np.zeros(1, dtype=np.int64),
+            ),
+        }
+        node.expanded = True
+
+        # Cell (0,0) is dead (not in grid), cell (1,0) has room
+        config = SearchConfig(max_chance_children=5)
+        node.grid = {
+            # (0, 0) missing — SimError during expansion
+            (1, 0): ChanceNode(children=[ChanceOutcome(handle=1, leaf_value_p1=0.5)]),
+        }
+
+        cell = puct_select_cell(node, config)
+        # Should skip (0,0) and pick (1,0) which has room for more children
+        assert cell == (1, 0), f"Expected (1, 0) but got {cell}"
 
 
 # ---------------------------------------------------------------------------
@@ -263,13 +583,18 @@ class TestPUCTScores:
         """Actions that have been visited more should have lower exploration bonus."""
         mock_view = MagicMock()
         node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
-        node.actions = {"p1": [0, 1, 2]}
-        node.policy_prior = {"p1": np.array([0.33, 0.33, 0.34])}
-        node.cumulative_regret = {"p1": np.zeros(3)}
-        node.visit_counts = {"p1": np.array([10, 1, 0], dtype=np.int64)}
+        node.info = {
+            "p1": InfoSet(
+                actions=[0, 1, 2],
+                prior=np.array([0.33, 0.33, 0.34]),
+                regret=np.zeros(3),
+                strategy_sum=np.zeros(3),
+                visits=np.array([10, 1, 0], dtype=np.int64),
+            ),
+        }
 
         config = SearchConfig(c_puct=2.0)
-        scores = _puct_scores(node, "p1", config)
+        scores = puct_scores(node, "p1", config)
 
         # Action 2 (0 visits) should have highest exploration bonus
         # Action 0 (10 visits) should have lowest
@@ -279,15 +604,20 @@ class TestPUCTScores:
         """Higher prior probability should increase the PUCT score."""
         mock_view = MagicMock()
         node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
-        node.actions = {"p1": [0, 1]}
         # Strong prior on action 0
-        node.policy_prior = {"p1": np.array([0.9, 0.1])}
-        node.cumulative_regret = {"p1": np.zeros(2)}
-        # Need at least one total visit for the exploration bonus to activate
-        node.visit_counts = {"p1": np.array([1, 1], dtype=np.int64)}
+        node.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.9, 0.1]),
+                regret=np.zeros(2),
+                strategy_sum=np.zeros(2),
+                # Need at least one total visit for the exploration bonus to activate
+                visits=np.array([1, 1], dtype=np.int64),
+            ),
+        }
 
         config = SearchConfig(c_puct=2.0)
-        scores = _puct_scores(node, "p1", config)
+        scores = puct_scores(node, "p1", config)
 
         # Higher prior -> higher score (when visits are equal)
         assert scores[0] > scores[1]
@@ -296,16 +626,21 @@ class TestPUCTScores:
         """Higher c_puct should increase the exploration component."""
         mock_view = MagicMock()
         node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
-        node.actions = {"p1": [0, 1]}
-        node.policy_prior = {"p1": np.array([0.5, 0.5])}
-        node.cumulative_regret = {"p1": np.array([1.0, 0.0])}
-        node.visit_counts = {"p1": np.array([5, 0], dtype=np.int64)}
+        node.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.array([1.0, 0.0]),
+                strategy_sum=np.zeros(2),
+                visits=np.array([5, 0], dtype=np.int64),
+            ),
+        }
 
         config_low = SearchConfig(c_puct=0.5)
         config_high = SearchConfig(c_puct=5.0)
 
-        scores_low = _puct_scores(node, "p1", config_low)
-        scores_high = _puct_scores(node, "p1", config_high)
+        scores_low = puct_scores(node, "p1", config_low)
+        scores_high = puct_scores(node, "p1", config_high)
 
         # With higher c_puct, the less-visited action should be more competitive
         gap_low = scores_low[0] - scores_low[1]
@@ -386,10 +721,17 @@ class TestStrategyExtraction:
         """Strategy sum is normalized to probabilities."""
         mock_view = MagicMock()
         node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
-        node.actions = {"p1": [10, 20, 30]}
-        node.strategy_sum = {"p1": np.array([100.0, 200.0, 300.0])}
+        node.info = {
+            "p1": InfoSet(
+                actions=[10, 20, 30],
+                prior=np.array([0.33, 0.33, 0.34]),
+                regret=np.zeros(3),
+                strategy_sum=np.array([100.0, 200.0, 300.0]),
+                visits=np.zeros(3, dtype=np.int64),
+            ),
+        }
 
-        sigma_bar = _extract_average_strategy(node, "p1")
+        sigma_bar = extract_average_strategy(node, "p1")
 
         assert abs(sigma_bar[10] - 1 / 6) < 1e-10
         assert abs(sigma_bar[20] - 2 / 6) < 1e-10
@@ -399,10 +741,17 @@ class TestStrategyExtraction:
         """When strategy sum is all zeros, fall back to uniform."""
         mock_view = MagicMock()
         node = TurnNode(handle=0, view=mock_view, to_move=["p1"])
-        node.actions = {"p1": [5, 6]}
-        node.strategy_sum = {"p1": np.array([0.0, 0.0])}
+        node.info = {
+            "p1": InfoSet(
+                actions=[5, 6],
+                prior=np.array([0.5, 0.5]),
+                regret=np.zeros(2),
+                strategy_sum=np.array([0.0, 0.0]),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+        }
 
-        sigma_bar = _extract_average_strategy(node, "p1")
+        sigma_bar = extract_average_strategy(node, "p1")
         assert abs(sigma_bar[5] - 0.5) < 1e-10
         assert abs(sigma_bar[6] - 0.5) < 1e-10
 
@@ -412,10 +761,17 @@ class TestStrategyExtraction:
 
         mock_view = MagicMock()
         node = TurnNode(handle=0, view=mock_view, to_move=["p1"])
-        node.actions = {"p1": [100, 200, 300]}
-        node.strategy_sum = {"p1": np.array([1.0, 2.0, 3.0])}
+        node.info = {
+            "p1": InfoSet(
+                actions=[100, 200, 300],
+                prior=np.array([0.33, 0.33, 0.34]),
+                regret=np.zeros(3),
+                strategy_sum=np.array([1.0, 2.0, 3.0]),
+                visits=np.zeros(3, dtype=np.int64),
+            ),
+        }
 
-        target = _build_policy_target(node, "p1")
+        target = build_policy_target(node, "p1")
 
         assert target.shape == (A,)
         assert abs(target.sum() - 1.0) < 1e-6
@@ -425,32 +781,3 @@ class TestStrategyExtraction:
         # All other positions should be zero
         assert target[0] == 0.0
         assert target[50] == 0.0
-
-
-# ---------------------------------------------------------------------------
-# ChanceNode value computation
-# ---------------------------------------------------------------------------
-
-
-class TestChanceNode:
-    """Test ChanceNode value averaging."""
-
-    def test_single_child_value(self):
-        """With one child, value = that child's value."""
-        chance = ChanceNode(children=[ChanceOutcome(handle=1, leaf_value_p1=0.7)])
-        assert abs(chance.value_p1 - 0.7) < 1e-10
-
-    def test_multiple_children_uniform_average(self):
-        """With multiple children, value = uniform average."""
-        chance = ChanceNode(children=[
-            ChanceOutcome(handle=1, leaf_value_p1=0.5),
-            ChanceOutcome(handle=2, leaf_value_p1=0.3),
-            ChanceOutcome(handle=3, leaf_value_p1=0.8),
-        ])
-        expected = (0.5 + 0.3 + 0.8) / 3
-        assert abs(chance.value_p1 - expected) < 1e-10
-
-    def test_empty_children_zero(self):
-        """Empty children -> value 0."""
-        chance = ChanceNode(children=[])
-        assert chance.value_p1 == 0.0

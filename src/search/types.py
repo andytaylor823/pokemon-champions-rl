@@ -1,7 +1,7 @@
 """Data structures for the GT-CFR search tree.
 
 Contains all node types, config, and result containers used across the search
-package. No algorithmic logic beyond ChanceNode.value_p1.
+package. No algorithmic logic lives here — pure data.
 """
 
 from __future__ import annotations
@@ -9,10 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import numpy as np
+import numpy as np
 
-    from state_types import StateView
+if TYPE_CHECKING:
+    from state_types import Side, StateView
 
 
 # ---------------------------------------------------------------------------
@@ -35,14 +35,51 @@ class SearchConfig:
 class SearchResult:
     """Output of one search() call — the stable inner/outer loop boundary."""
 
-    strategy: dict[str, dict[int, float]]  # sigma-bar per side over top-k action indices
+    strategy: dict[Side, dict[int, float]]  # sigma-bar per side over top-k action indices
     value: float  # search-refined CFV for p1 (negate for p2)
-    policy_target: dict[str, np.ndarray]  # full [A] vector per side (mass on top-k, zeros elsewhere)
+    policy_target: dict[Side, np.ndarray]  # full [A] vector per side (mass on top-k, zeros elsewhere)
 
 
 # ---------------------------------------------------------------------------
 # Node types (internal, mutable — hold ephemeral regret tables)
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class InfoSet:
+    """One player's info-set state at a TurnNode: actions, prior, regret, strategy-sum, visits.
+
+    Encapsulates the five parallel arrays that were previously spread across
+    separate dicts on TurnNode.
+    """
+
+    actions: list[int]  # top-k canonical action indices
+    prior: np.ndarray  # CVPN policy prior over top-k (probabilities, sums to 1)
+    regret: np.ndarray  # CFR+ cumulative regret [k]
+    strategy_sum: np.ndarray  # iteration-weighted strategy accumulator [k]
+    visits: np.ndarray  # per-action visit counts [k] (int64)
+
+    @staticmethod
+    def from_actions(actions: list[int], prior: np.ndarray) -> InfoSet:
+        """Create an InfoSet with zeroed regret/strategy/visits from an action list and prior."""
+        k = len(actions)
+        return InfoSet(
+            actions=actions,
+            prior=prior,
+            regret=np.zeros(k, dtype=np.float64),
+            strategy_sum=np.zeros(k, dtype=np.float64),
+            visits=np.zeros(k, dtype=np.int64),
+        )
+
+    @staticmethod
+    def noop() -> InfoSet:
+        """Create a single-action no-op InfoSet for non-acting sides."""
+        return InfoSet.from_actions([0], np.array([1.0]))
+
+    @staticmethod
+    def empty() -> InfoSet:
+        """Create an empty InfoSet (no legal actions — shouldn't happen for non-terminals)."""
+        return InfoSet.from_actions([], np.array([]))
 
 
 @dataclass
@@ -63,12 +100,10 @@ class ChanceOutcome:
 class TurnNode:
     """A simultaneous-move decision node with a k x k action grid.
 
-    Holds two info sets (one per player), each with regret/strategy-sum tables.
-    Children are ChanceNodes indexed by (action_idx_p1, action_idx_p2).
-
-    Both sides always have valid arrays after expansion: the non-acting side in
-    a unilateral node gets a single no-op action, so CFR/PUCT code can assume
-    both p1 and p2 entries exist without conditional fallbacks.
+    Holds two info sets (one per player) via the `info` dict. Both sides always
+    have a valid InfoSet after expansion: the non-acting side in a unilateral
+    node gets a single no-op action, so CFR/PUCT code can assume both p1 and p2
+    entries exist without conditional fallbacks.
     """
 
     handle: int  # SimClient handle for this state
@@ -77,20 +112,8 @@ class TurnNode:
     # Which sides must act (["p1", "p2"] for simultaneous, one side for unilateral)
     to_move: list[str] = field(default_factory=list)
 
-    # Top-k action indices per side (set at expansion time)
-    actions: dict[str, list[int]] = field(default_factory=dict)
-
-    # Cached CVPN policy prior per side: {side: ndarray[k] probabilities}
-    policy_prior: dict[str, np.ndarray] = field(default_factory=dict)
-
-    # CFR+ cumulative regret per side: {side: ndarray[k]}
-    cumulative_regret: dict[str, np.ndarray] = field(default_factory=dict)
-
-    # Strategy sum for average strategy: {side: ndarray[k]}
-    strategy_sum: dict[str, np.ndarray] = field(default_factory=dict)
-
-    # Visit count per side per action: {side: ndarray[k] int}
-    visit_counts: dict[str, np.ndarray] = field(default_factory=dict)
+    # Per-side info set: actions, prior, regret, strategy_sum, visits
+    info: dict[str, InfoSet] = field(default_factory=dict)
 
     # Grid of ChanceNode children indexed by (p1_action_pos, p2_action_pos)
     # where pos is the position within the top-k array (0..k-1)
@@ -108,10 +131,3 @@ class ChanceNode:
     """
 
     children: list[ChanceOutcome] = field(default_factory=list)
-
-    @property
-    def value_p1(self) -> float:
-        """Uniform-weighted average of child leaf values (p1 perspective)."""
-        if not self.children:
-            return 0.0
-        return sum(o.leaf_value_p1 for o in self.children) / len(self.children)

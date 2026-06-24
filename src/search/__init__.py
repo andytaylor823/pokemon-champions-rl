@@ -5,18 +5,21 @@ working after the single-file → package refactor.
 """
 
 from search.cfr import (
-    _cfr_update_recursive,
-    _regret_matching,
+    cfr_update_recursive,
+    regret_matching,
 )
 from search.core import search
 from search.expansion import (
-    _puct_scores,
-    _puct_select_cell,
+    expand_turn_node,
+    puct_expand_one,
+    puct_scores,
+    puct_select_cell,
 )
-from search.strategy import _build_policy_target, _extract_average_strategy
+from search.strategy import build_policy_target, extract_average_strategy
 from search.types import (
     ChanceNode,
     ChanceOutcome,
+    InfoSet,
     SearchConfig,
     SearchResult,
     TurnNode,
@@ -25,14 +28,17 @@ from search.types import (
 __all__ = [
     "ChanceNode",
     "ChanceOutcome",
+    "InfoSet",
     "SearchConfig",
     "SearchResult",
     "TurnNode",
-    "_build_policy_target",
-    "_cfr_update_recursive",
-    "_extract_average_strategy",
-    "_puct_scores",
-    "_puct_select_cell",
-    "_regret_matching",
+    "build_policy_target",
+    "cfr_update_recursive",
+    "expand_turn_node",
+    "extract_average_strategy",
+    "puct_expand_one",
+    "puct_scores",
+    "puct_select_cell",
+    "regret_matching",
     "search",
 ]

@@ -12,11 +12,10 @@ import numpy as np
 import pytest
 import torch
 
-from action_space import A, legal_mask
+from action_space import A, index_to_choice_string, legal_mask
 from cvpn import CVPN
 from search import SearchConfig, SearchResult, search
 from sim_client import SimClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -151,6 +150,77 @@ class TestSearchFromMovePhase:
                 mask = legal_mask(move_view_live.legal.get(s), move_view_live.phase)
                 for action_idx in strat:
                     assert mask[action_idx], f"Illegal action {action_idx} in {s}'s strategy"
+
+
+class TestSearchFromForceSwitch:
+    """Run search from the forceSwitch phase (gap #26)."""
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("battle_seed", [[5, 6, 7, 8], [11, 22, 33, 44], [100, 200, 300, 400]])
+    def test_produces_valid_result(self, sim_client: SimClient, team_a: list, team_b: list, battle_seed: list):
+        """Search at forceSwitch returns a well-formed SearchResult.
+
+        Advances a battle turn-by-turn with randomized action selection until a
+        forceSwitch occurs. Parametrized over multiple seeds to increase the
+        chance that at least one produces a faint. If none do, the test skips.
+        """
+        from sim_client import SimError as _SimError
+
+        rng = random.Random(battle_seed[0])
+
+        live_handle, _ = sim_client.new_battle(team_a, team_b, seed=battle_seed)
+        step_res = sim_client.step(live_handle, {"p1": "team 1234", "p2": "team 1234"}, seed=_rng_seed(rng))
+        current_handle = step_res.child
+        current_view = step_res.view
+
+        for _ in range(50):
+            if current_view.terminal:
+                pytest.skip("Battle ended before forceSwitch occurred")
+
+            if current_view.phase == "forceSwitch":
+                break
+
+            # Pick a random legal action per side; retry on SimError
+            mask_per_side = {s: legal_mask(current_view.legal.get(s), current_view.phase) for s in current_view.to_move}
+            stepped = False
+            for _attempt in range(10):
+                choices = {}
+                for s in current_view.to_move:
+                    legal_indices = np.flatnonzero(mask_per_side[s])
+                    pick = int(rng.choice(legal_indices))
+                    choices[s] = index_to_choice_string(pick)
+                try:
+                    step_res = sim_client.step(current_handle, choices, seed=_rng_seed(rng))
+                    current_handle = step_res.child
+                    current_view = step_res.view
+                    stepped = True
+                    break
+                except _SimError:
+                    continue
+            if not stepped:
+                pytest.skip("Could not find a valid choice combination")
+        else:
+            pytest.skip("No forceSwitch encountered within 50 turns")
+
+        # We have a forceSwitch view — run search on it
+        net = CVPN()
+        net.eval()
+
+        result = search(current_view, sim_client, net, from_handle=current_handle, config=_FAST_CONFIG)
+
+        assert isinstance(result, SearchResult)
+        assert -1.0 <= result.value <= 1.0
+
+        for s in current_view.to_move:
+            assert s in result.strategy
+            strat = result.strategy[s]
+            if strat:
+                total_prob = sum(strat.values())
+                assert abs(total_prob - 1.0) < 1e-6
+
+                mask = legal_mask(current_view.legal.get(s), current_view.phase)
+                for action_idx in strat:
+                    assert mask[action_idx], f"Illegal action {action_idx} in {s}'s forceSwitch strategy"
 
 
 class TestSearchDeterminism:

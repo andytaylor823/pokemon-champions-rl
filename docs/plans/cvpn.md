@@ -1,5 +1,5 @@
 ---
-last_synced: dba4d8c
+last_synced: a39ccc9
 watches:
   - src/
   - docs/architecture/state-encoding.md
@@ -15,8 +15,8 @@ watches:
 
 ## Status
 
-Design locked (grilling session), **implementation not started**. This spec is the unified
-Phase-1/Phase-4 design with Phase 1 as the degenerate case. Phase 1 is built **now**, against
+**Phase 1 implementation complete.** Module: `src/cvpn.py`. This spec is the unified
+Phase-1/Phase-4 design with Phase 1 as the degenerate case. Phase 1 is built against
 the current action space (`A = 1089`); the Phase-4 pieces are designed-in but pinned to trivial
 values so the upgrade is a head swap, not a rewrite.
 

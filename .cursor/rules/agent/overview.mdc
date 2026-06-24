@@ -1,7 +1,7 @@
 ---
 description: Project architecture, simulation engine, action space, and imperfect information constraints for the RL agent
 alwaysApply: true
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - sim/src/
   - src/
@@ -11,23 +11,27 @@ watches:
 
 # Project Overview — Pokemon Champions RL Agent
 
-## Architecture: AlphaZero-Style Self-Play with Search
+## Architecture: GT-CFR Self-Play with Neural Guidance
 
-The agent uses MCTS guided by a neural network, trained via self-play. This is the AlphaZero paradigm adapted for imperfect information:
+The agent uses **GT-CFR** (Game-Theoretic CFR, a.k.a. Player of Games) guided by the **CVPN** (Counterfactual Value + Policy Network), trained via self-play:
 
-1. **Neural network** with two heads:
-   - **Policy head**: predicts which moves are promising (guides MCTS exploration)
-   - **Value head**: predicts win probability from a position (evaluates MCTS leaf nodes)
-2. **MCTS** runs at every decision point, using the network to search. Produces an improved policy (visit count distribution) better than the raw network output.
-3. **Training loop**: self-play games generate (state, MCTS policy, game outcome) tuples. The network is trained via supervised learning to match MCTS's improved policy and predict outcomes.
+1. **CVPN** with two heads:
+   - **Policy head**: outputs a prior over the joint action space (guides PUCT expansion in search)
+   - **Value head**: predicts the expected game value (scalar in Phase 1; vector of CFVs in Phase 4)
+2. **GT-CFR search** runs at every decision point: builds an ephemeral tree, interleaves PUCT expansion with CFR+ regret updates, and produces a mixed average strategy superior to the raw policy prior.
+3. **Training loop**: self-play games generate `(state, average_strategy, search_value)` tuples. The CVPN is trained via supervised learning to match Search's improved strategy and value estimates.
 
-The network gets better → MCTS plays better → generates better training data → network improves further.
+The network improves → search produces better strategies → generates better training data → network improves further.
 
-### Imperfect Information Adaptation
+### Why GT-CFR, Not MCTS
 
-Naive MCTS fails in Pokemon due to **strategy fusion** — the simulated opponent "sees" your hidden items/moves in rollouts, corrupting the search tree. Solutions under consideration:
-- **Information Set MCTS (determinization)**: sample plausible opponent states from meta priors, run MCTS per sample, aggregate results. Domain expertise directly improves prior quality.
-- **Player of Games approach**: public belief states + counterfactual regret minimization at search nodes. Avoids strategy fusion by reasoning over information sets.
+Naive MCTS fails in Pokemon due to **strategy fusion** — even with perfect information, simultaneous moves mean neither player sees the other's choice before committing. Each turn is a matrix game whose solution is a **mixed** average strategy, not a single best move. This is exactly the regime CFR+ handles and minimax MCTS does not.
+
+The project uses **GT-CFR / Player of Games** directly — the MCTS pit-stop named in early milestones was skipped because:
+- Simultaneous moves make even perfect-info Pokemon a genuine imperfect-information game (step thinking has no pure-strategy solution)
+- The CVPN and reference implementations (poker toys) are already GT-CFR-shaped; building MCTS first would be throwaway work
+
+Determinized MCTS (sampling opponent states and running independent searches) is explicitly **not** used — it suffers from strategy fusion and produces exploitable strategies.
 
 ### Nash Hardening (Future)
 
@@ -36,14 +40,14 @@ Once the agent is strong, push toward unexploitable mixed strategies using ideas
 ## Milestones
 
 1. **Environment**: connect to Pokemon Showdown sim, encode battle state as tensors, mask illegal actions
-2. **State cloning**: `@pkmn/sim` integration with `Battle.toJSON()` / `Battle.fromJSON()` for mid-battle forking
-3. **MCTS**: search over cloned states producing legal, sensible games
-4. **Neural network**: policy + value heads, called from MCTS leaf evaluation
-5. **Self-play training loop**: MCTS generates training data, network learns, repeat
-6. **Imperfect info (the real product)**: move past a *brief* determinized-MCTS baseline to **GT-CFR / Player of Games** (public belief states + CFR+ at search nodes); meta priors supply the opponent belief ranges
+2. **State cloning**: `pokemon-showdown` engine integration with `State.serializeBattle()` / `State.deserializeBattle()` for mid-battle forking
+3. **GT-CFR search**: search over cloned states using CFR+ with PUCT expansion, producing mixed average strategies at each decision point
+4. **CVPN**: policy + value heads, called from search for leaf evaluation and expansion priors
+5. **Self-play training loop**: search generates training data, CVPN learns, repeat
+6. **Imperfect info (the north star)**: un-pin the Phase-1 degenerate values — belief ranges over opponent private state, MCCFR world sampling, vector CFV head, meta priors supplying candidate sets
 7. **Nash hardening**: mixed strategies, robust to exploitation
 
-> **Sequencing philosophy (rebalanced toward shipping).** Milestones 3–5 (MCTS + perfect-info self-play) are a deliberately **brief pit-stop**: build them only well enough to (1) prove the infrastructure works end to end (simulate games and theoretical turns, encode state, mask actions, run the loop) and (2) show feasibility — a from-random agent self-improving into a semi-coherent battler that **reliably beats earlier versions of itself** (even while "cheating" with perfect info). Then pivot hard to the **GT-CFR endgame (milestone 6) as the north star**. Bias toward an agent that works in real games and toward visible, incremental progress over theoretical completeness. See `docs/architecture/gt-cfr-theory.md` §14.
+> **Sequencing philosophy (rebalanced toward shipping).** Phase 1 builds GT-CFR directly in the perfect-information regime — the degenerate case of the Phase-4 north star (same algorithm, same network, with imperfect-information machinery pinned to trivial values). The goal is to (1) prove the infrastructure works end to end (simulate games, encode state, mask actions, search, emit training tuples) and (2) show feasibility — a from-random agent self-improving into a semi-coherent battler that **reliably beats earlier versions of itself** (even while "cheating" with perfect info). The upgrade to Phase 4 is un-pinning those values, not a rewrite. See `docs/architecture/gt-cfr-theory.md` §14.
 
 ## Action Space (Per Turn in Doubles)
 

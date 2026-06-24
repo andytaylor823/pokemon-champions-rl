@@ -2,7 +2,7 @@
 description: SimClient module overview — the single Python↔TypeScript seam over the Pokemon Showdown engine
 globs: sim/src/**/*.ts,src/sim_client.py
 alwaysApply: false
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - sim/src/
   - src/sim_client.py

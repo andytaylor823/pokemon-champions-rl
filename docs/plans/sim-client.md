@@ -1,5 +1,5 @@
 ---
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - sim/src/
   - src/sim_client.py
@@ -12,8 +12,9 @@ watches:
 ## Status
 
 Partly built. `sim/src/sim-worker.ts` and `src/sim_client.py` exist with passing test suites.
+Snapshot extended with volatile details, status counters, activeTurns, lastItem, side condition
+layers, and field duration counters.
 
 ## Remaining work
 
-- **Snapshot completeness** — v1 snapshot drops volatile/status turn-counters, Protect counter, and Substitute HP (needed by Encoder token anatomy).
 - **Structured chance outcome** — `step` currently returns raw protocol-log delta; needs structured "what randomness fired" for Search chance-bucketing.

@@ -2,7 +2,7 @@
 description: Minimum TypeScript/Vitest context for Python-primary maintainer to write and maintain sim tests
 globs: sim/tests/**/*.ts,sim/src/**/*.ts
 alwaysApply: false
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - sim/
 ---
@@ -62,7 +62,7 @@ sim/
   vitest.config.ts      # test config — points at tests/**/*.test.ts
   tsconfig.json         # TypeScript config — includes src/ and tests/
   src/
-    types.ts            # BattleResult, Strategy types
+    types.ts            # StateView, BattleSnapshot, PokemonSnapshot, SideSnapshot, FieldSnapshot, SideConditionSnapshot, MoveSnapshot, BattleResult, Strategy
     battle-runner.ts    # async BattleStream runner, packTeam, validateStatPoints
     sim-worker.ts       # sync worker (JSON-RPC over stdio), dispatch, handle registry
     replay-export.ts    # HTML replay generation

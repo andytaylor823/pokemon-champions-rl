@@ -2,7 +2,7 @@
 description: Champions uses Stat Points (not EVs) — different limits, different formula, easy to confuse
 globs: sim/**/*.ts
 alwaysApply: false
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - sim/src/battle-runner.ts
 ---

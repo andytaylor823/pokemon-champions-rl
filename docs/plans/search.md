@@ -1,8 +1,7 @@
 ---
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
-  - src/
-  - src/search.py
+  - src/search/
   - docs/architecture/
   - docs/plans/
 ---
@@ -15,11 +14,12 @@ watches:
 
 ## Status
 
-**Design locked (grilling session). Implementation not started.** This document is the
-complete Phase-1 specification: the design decisions, the tree structure, the inner-loop
-algorithm, the interfaces consumed, and the seam exposed to the outer loop. Tuning knobs that
-were chosen on intuition are recorded in `docs/vibes-decisions.md` §9 and cross-referenced
-inline as *(vibes N.N)*.
+**Phase 1 implementation complete.** Package: `src/search/` (6 modules, ~1090 lines).
+Tests in `tests/unit/search/` and `tests/integration/test_search.py`. This document is the
+complete Phase-1 specification that the implementation follows: the design decisions, the tree
+structure, the inner-loop algorithm, the interfaces consumed, and the seam exposed to the outer
+loop. Tuning knobs that were chosen on intuition are recorded in `docs/vibes-decisions.md` §9
+and cross-referenced inline as *(vibes N.N)*.
 
 ## Context — what changed from the original plan, and why
 
@@ -314,11 +314,23 @@ in Python — `SimClient` is the sole source of truth.)
 
 ## 11. Module shape
 
-New file `src/search.py` (split to a package only if it grows unwieldy). Frozen dataclasses
-for `SearchConfig`, the node types, and `SearchResult` (per `agent/overview.mdc`: dataclasses
-over Pydantic for hot-path internals; Pydantic is reserved for wire boundaries, which
-`SimClient` already owns). Tests in `tests/unit/test_search.py` and
-`tests/integration/test_search.py`, wired into `.github/workflows/test.yml`.
+Package `src/search/` with frozen dataclasses for `SearchConfig`, the node types, and
+`SearchResult` (per `agent/overview.mdc`: dataclasses over Pydantic for hot-path internals;
+Pydantic is reserved for wire boundaries, which `SimClient` already owns).
+
+```
+src/search/
+  __init__.py       — public API: search(), SearchConfig, SearchResult
+  types.py          — node dataclasses (TurnNode, ChanceNode, OutcomeChild), InfoSetData
+  core.py           — search() orchestrator: expansion loop + CFR+ sweeps + result extraction
+  expansion.py      — PUCT selection, node creation, SimClient/Encoder/CVPN integration
+  cfr.py            — CFR+ regret update, regret matching, average strategy accumulation
+  strategy.py       — final strategy extraction (σ̄ from strategy sums)
+```
+
+Tests in `tests/unit/search/` (5 files: `test_types.py`, `test_core.py`, `test_expansion.py`,
+`test_cfr.py`, `test_strategy.py`) and `tests/integration/test_search.py`, wired into
+`.github/workflows/test.yml`.
 
 ```python
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 description: CVPN architecture — Transformer backbone, two heads (phase-split policy + scalar value), config, and forward contract
 globs: src/cvpn.py
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/cvpn.py
 ---

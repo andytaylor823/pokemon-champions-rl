@@ -2,7 +2,7 @@
 description: Search tree node invariants — InfoSet guarantees, mutability rules, handle lifecycle, grid indexing
 globs: src/search/**/*.py
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/search/types.py
   - src/search/expansion.py

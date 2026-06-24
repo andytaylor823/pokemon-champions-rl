@@ -2,7 +2,7 @@
 description: ObsBundle tensor contract — exact field shapes, dtypes, collation semantics, and padding conventions consumed by CVPN
 globs: src/obs_bundle.py,src/encoder.py,src/cvpn.py
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/obs_bundle.py
   - src/encoder.py

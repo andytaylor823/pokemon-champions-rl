@@ -2,7 +2,7 @@
 description: CFR+ and PUCT algorithm mechanics — regret matching, recursive updates, tree_value, PUCT scoring, expansion strategies
 globs: src/search/cfr.py,src/search/expansion.py
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/search/cfr.py
   - src/search/expansion.py

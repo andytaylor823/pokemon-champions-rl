@@ -2,7 +2,7 @@
 description: Encoding pipeline overview — state_types → encoder → obs_bundle, with vocab providing embedding IDs
 globs: src/encoder.py,src/obs_bundle.py,src/vocab.py,src/state_types.py
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/encoder.py
   - src/obs_bundle.py

@@ -14,7 +14,7 @@ watches:
 
 ## Status
 
-**Phase 1 implementation complete.** Package: `src/search/` (6 modules, ~1090 lines).
+**Phase 1 implementation complete.** Package: `src/search/` (6 modules, ~850 lines).
 Tests in `tests/unit/search/` and `tests/integration/test_search.py`. This document is the
 complete Phase-1 specification that the implementation follows: the design decisions, the tree
 structure, the inner-loop algorithm, the interfaces consumed, and the seam exposed to the outer

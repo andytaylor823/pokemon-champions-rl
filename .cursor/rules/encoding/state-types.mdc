@@ -2,7 +2,7 @@
 description: State types wire contract — Pydantic models mirroring sim/src/types.ts, validation role, and sync discipline
 globs: src/state_types.py,sim/src/types.ts
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/state_types.py
   - sim/src/types.ts

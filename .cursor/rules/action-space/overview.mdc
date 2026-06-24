@@ -2,7 +2,7 @@
 description: Action space module — canonical joint action index for VGC doubles, choice string conversion, and legal mask
 globs: src/action_space.py
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/action_space.py
 ---

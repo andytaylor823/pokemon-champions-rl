@@ -2,7 +2,7 @@
 description: GT-CFR search package — entry point, loop structure, SearchResult boundary, submodule responsibilities
 globs: src/search/**/*.py
 alwaysApply: false
-last_synced: 3b89721
+last_synced: a39ccc9
 watches:
   - src/search/
 ---

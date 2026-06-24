@@ -149,8 +149,8 @@ class TestSearchNormalPath:
 
         mock_net = MagicMock()
         action_mask = torch.tensor([True, True] + [False] * (as_mod.A - 2))
-        mock_obs = MagicMock()
-        mock_obs.__getitem__ = lambda self, key: action_mask if key == "action_mask" else MagicMock()
+        # Dict-based stub — avoids brittle MagicMock dunder override
+        mock_obs: dict = {"action_mask": action_mask}
 
         # CVPN returns valid logits and values for the batch
         mock_net.return_value = (torch.zeros(2, as_mod.A), torch.tensor([0.5, 0.5]))

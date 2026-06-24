@@ -25,6 +25,10 @@ def regret_matching(cumulative_regret: np.ndarray) -> np.ndarray:
 
     Returns uniform distribution if no positive regret exists.
     """
+    # Empty regret vector (e.g. InfoSet.empty()) — nothing to distribute over
+    if len(cumulative_regret) == 0:
+        return cumulative_regret.copy()
+
     positive = np.maximum(cumulative_regret, 0.0)
     total = positive.sum()
     if total > 0:

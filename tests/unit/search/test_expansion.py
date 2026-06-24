@@ -50,12 +50,10 @@ from sim_client import SimError
 # ---------------------------------------------------------------------------
 
 
-def _mock_obs_with_mask(n_legal: int) -> MagicMock:
-    """Create a mock ObsBundle whose action_mask has n_legal True entries."""
+def _mock_obs_with_mask(n_legal: int) -> dict:
+    """Create a dict-based ObsBundle stub whose action_mask has n_legal True entries."""
     action_mask = torch.tensor([True] * n_legal + [False] * (as_mod.A - n_legal))
-    obs = MagicMock()
-    obs.__getitem__ = lambda self, key: action_mask if key == "action_mask" else MagicMock()
-    return obs
+    return {"action_mask": action_mask}
 
 
 # ---------------------------------------------------------------------------
@@ -746,6 +744,50 @@ class TestTreeDeepening:
 
 class TestPUCTExpandOneBoundary:
     """Test puct_expand_one when tree is saturated or depth-capped."""
+
+    def test_skips_terminal_outcome_expands_sibling(self):
+        """First outcome is terminal, second is expandable -> should expand the second."""
+        mock_view = MagicMock()
+        mock_view.terminal = False
+        mock_view.to_move = ["p1", "p2"]
+        mock_view.phase = "move"
+
+        config = SearchConfig(max_chance_children=2, k_actions=2)
+
+        # Two outcomes: first terminal (node stays None), second expandable
+        terminal_outcome = ChanceOutcome(handle=10, leaf_value_p1=1.0)
+        expandable_outcome = ChanceOutcome(handle=20, leaf_value_p1=0.5)
+
+        root = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        root.info = {
+            "p1": InfoSet.from_actions([0], np.array([1.0])),
+            "p2": InfoSet.from_actions([0], np.array([1.0])),
+        }
+        root.expanded = True
+        root.grid = {(0, 0): ChanceNode(children=[terminal_outcome, expandable_outcome])}
+
+        mock_sim = MagicMock()
+        # First call (terminal outcome) returns terminal view
+        # Second call (expandable outcome) returns non-terminal view
+        mock_sim.view.side_effect = [
+            MagicMock(terminal=True),
+            mock_view,
+        ]
+        mock_sim.step.return_value = MagicMock(
+            view=MagicMock(terminal=True, utility={"p1": 0.0}), child=300,
+        )
+
+        mock_net = MagicMock()
+        mock_obs = _mock_obs_with_mask(2)
+        mock_net.return_value = (torch.zeros(2, as_mod.A), torch.tensor([0.5, 0.5]))
+
+        with patch("search.expansion.encode", return_value=mock_obs), \
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+            result = puct_expand_one(root, mock_sim, mock_net, config=config)
+
+        assert result is True, "Should have expanded the second (non-terminal) outcome"
+        assert expandable_outcome.node is not None, "Second outcome should have been expanded"
+        assert terminal_outcome.node is None, "Terminal outcome should remain unexpanded"
 
     def test_saturated_tree_returns_false(self):
         """All cells full, all outcomes expanded with no further grid -> False (gap #19)."""

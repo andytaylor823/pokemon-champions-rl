@@ -132,6 +132,12 @@ class TestRegretMatching:
         if np.isfinite(strategy).all():
             assert abs(strategy.sum() - 1.0) < 1e-10
 
+    def test_empty_regret_returns_empty(self):
+        """Empty regret array (InfoSet.empty()) must not crash with ZeroDivisionError."""
+        strategy = regret_matching(np.array([]))
+        assert strategy.shape == (0,)
+        assert len(strategy) == 0
+
 
 # ---------------------------------------------------------------------------
 # CFR+ convergence tests (migrated + new)

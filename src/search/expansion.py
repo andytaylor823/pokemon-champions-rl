@@ -153,10 +153,10 @@ def expand_turn_node(
             continue
 
         topk_values, topk_indices = torch.topk(probs, k)
-        action_indices = topk_indices.numpy().tolist()
+        action_indices = topk_indices.detach().cpu().numpy().tolist()
 
         # Normalize the prior over the top-k support
-        prior_probs = topk_values.numpy()
+        prior_probs = topk_values.detach().cpu().numpy()
         prior_probs = prior_probs / prior_probs.sum()
 
         node.info[s] = InfoSet.from_actions(action_indices, prior_probs)
@@ -330,7 +330,10 @@ def puct_expand_one(
         for outcome in chance.children:
             if outcome.node is None or not outcome.node.expanded:
                 new_node = _expand_child_turn_node(outcome, sim, net, config)
-                return new_node is not None
+                if new_node is not None:
+                    return True
+                # Terminal or empty to_move — skip to next outcome
+                continue
             if expanded_child is None:
                 expanded_child = outcome.node
 

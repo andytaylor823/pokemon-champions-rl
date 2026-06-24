@@ -1,0 +1,54 @@
+---
+description: Action space module — canonical joint action index for VGC doubles, choice string conversion, and legal mask
+globs: src/action_space.py
+alwaysApply: false
+last_synced: 3b89721
+watches:
+  - src/action_space.py
+---
+
+# Action Space — flat joint action index
+
+`action_space.py` defines a **fixed-size flat index** `[A = 1089]` covering both team preview and the move phase. The CVPN policy head outputs logits of shape `[A]`; an action mask marks which indices are legal.
+
+## Layout
+
+| Region | Indices | Size | Description |
+|--------|---------|------|-------------|
+| Team preview | `[0, 360)` | 360 | P(6,4) ordered selections |
+| Move phase | `[360, 1089)` | 729 | slot1 x slot2 joint (27 x 27) |
+
+## Per-slot decomposition (ACTIONS_PER_SLOT = 27)
+
+- `[0, 12)` — move 1-4 x target {1, 2, -1} (base)
+- `[12, 24)` — move 1-4 x target {1, 2, -1} + mega evolution
+- `[24, 26)` — switch to bench position 1 or 2 (team slots 3, 4)
+- `[26]` — pass (empty slot, no action required)
+
+## Showdown targeting conventions
+
+- `1` = opponent slot 1 (left foe)
+- `2` = opponent slot 2 (right foe)
+- `-1` = ally
+
+For spread/self-targeting moves, the mask restricts to a single canonical target.
+
+## Key constants
+
+`A = 1089`, `TEAM_PREVIEW_COUNT = 360`, `MOVE_PHASE_OFFSET = 360`, `ACTIONS_PER_SLOT = 27`, `PASS_INDEX = 26`.
+
+## Public API
+
+- **`index_to_choice_string(idx) → str`** — canonical index to Showdown choice string (e.g. `"move 1 1 mega, switch 3"`, `"team 1342"`).
+- **`choice_string_to_index(choice) → int`** — inverse mapping.
+- **`legal_mask(request, phase) → np.ndarray[A]`** — bool mask from a raw Showdown request object. Handles team preview (all 360 legal), move phase, and force switch.
+
+## Cross-slot constraint
+
+Both active slots cannot switch to the same bench Pokemon. `legal_mask` enforces this by excluding joint cells where both slot indices map to the same bench position.
+
+## Choice string format
+
+- Team preview: `"team 1342"` (digits = 1-indexed team slot ordering)
+- Move phase: `"move 1 1, switch 3"` (slot1, slot2 separated by `, `)
+- Single-slot (other passed): `"move 2 -1 mega"` (no comma)

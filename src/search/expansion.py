@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from action_space import index_to_choice_string, legal_mask
+from action_space import index_to_choice_string
 from encoder import encode
 from obs_bundle import ObsBundle, collate_obs_bundles
 from search.cfr import regret_matching
@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     from cvpn import CVPN
     from sim_client import SimClient, StepResult
     from state_types import StateView
+
+# Absolute depth cap for puct_expand_one descent to prevent runaway loops.
+# In practice the expansion_budget exhausts long before this is reached.
+_MAX_DESCENT_DEPTH = 50
 
 
 # ---------------------------------------------------------------------------
@@ -46,44 +50,22 @@ def puct_scores(node: TurnNode, side: str, config: SearchConfig) -> np.ndarray:
 
 
 def puct_select_cell(node: TurnNode, config: SearchConfig) -> tuple[int, int] | None:
-    """Select the grid cell to expand/descend into via PUCT scores.
+    """Select the highest-PUCT-scored grid cell that puct_expand_one can act on.
 
-    Returns (p1_pos, p2_pos) index into the top-k grid, or None if fully expanded.
+    Returns (p1_pos, p2_pos) index into the top-k grid, or None if the grid
+    is empty.  The widen-vs-deepen-vs-descend decision lives entirely in
+    puct_expand_one; this function just picks the best live cell.
     """
-    info_p1 = node.info.get("p1")
-    info_p2 = node.info.get("p2")
-    if info_p1 is None or info_p2 is None:
+    info_p1, info_p2 = node.info["p1"], node.info["p2"]
+    if not info_p1.actions or not info_p2.actions:
         return None
 
-    k_p1 = len(info_p1.actions)
+    joint = np.outer(puct_scores(node, "p1", config), puct_scores(node, "p2", config))
     k_p2 = len(info_p2.actions)
-
-    if k_p1 == 0 or k_p2 == 0:
-        return None
-
-    # Both sides always have valid InfoSets after expansion
-    scores_p1 = puct_scores(node, "p1", config)
-    scores_p2 = puct_scores(node, "p2", config)
-
-    # Joint score = outer product; pick the cell with highest combined score
-    joint_scores = np.outer(scores_p1, scores_p2)
-
-    # Flatten, sort descending, pick the first cell that can be widened, deepened, or descended
-    flat_order = np.argsort(joint_scores.ravel())[::-1]
-    for flat_idx in flat_order:
-        i = int(flat_idx // k_p2)
-        j = int(flat_idx % k_p2)
-        chance = node.grid.get((i, j))
-        if chance is None:
-            # Cell failed during initial expansion (SimError) — permanently dead
-            continue
-        # Widen: ChanceNode needs more outcome children
-        if len(chance.children) < config.max_chance_children:
+    for flat_idx in np.argsort(joint.ravel())[::-1]:
+        i, j = divmod(int(flat_idx), k_p2)
+        if (i, j) in node.grid:
             return (i, j)
-        # Full ChanceNode — eligible for deepening (frontier leaves / unexpanded
-        # children) OR descent (all outcomes are expanded TurnNodes). Either way
-        # puct_expand_one can make progress, so return the cell unconditionally.
-        return (i, j)
     return None
 
 
@@ -113,6 +95,18 @@ def _cell_choices(node: TurnNode, i: int, j: int) -> dict[str, str]:
         if side in node.to_move:
             choices[side] = index_to_choice_string(node.info[side].actions[idx])
     return choices
+
+
+# ---------------------------------------------------------------------------
+# Single-state CVPN helpers
+# ---------------------------------------------------------------------------
+
+
+def cvpn_value(net: CVPN, view: StateView, perspective: str = "p1") -> float:
+    """Evaluate a single state with CVPN and return the scalar value."""
+    with torch.no_grad():
+        _, value = net(encode(view, perspective))
+    return float(value.item())
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +143,11 @@ def expand_turn_node(
 
     # Extract top-k per acting side and build InfoSet
     for idx, s in enumerate(sides):
-        logits = prior_logits[idx]  # [A]
-        # Apply legal mask to get valid probabilities
-        mask = torch.from_numpy(legal_mask(view.legal.get(s), view.phase)).bool()
-        masked_logits = logits.masked_fill(~mask, float("-inf"))
-        probs = torch.softmax(masked_logits, dim=0)
+        # CVPN already masked illegal logits to -inf; softmax directly
+        probs = torch.softmax(prior_logits[idx], dim=0)
 
-        # Select top-k legal actions
-        k = min(config.k_actions, int(mask.sum().item()))
+        # Top-k count from the action_mask baked into the ObsBundle by the encoder
+        k = min(config.k_actions, int(obs_bundles[idx]["action_mask"].sum().item()))
         if k == 0:
             node.info[s] = InfoSet.empty()
             continue
@@ -259,11 +250,7 @@ def _expand_chance_child(
     if child_view.terminal:
         chance.children.append(ChanceOutcome(handle=result.child, leaf_value_p1=_terminal_utility_p1(child_view)))
     else:
-        # CVPN evaluation for the new world
-        with torch.no_grad():
-            obs = encode(child_view, "p1")
-            _, value = net(obs)
-            value_p1 = float(value.item())
+        value_p1 = cvpn_value(net, child_view)
         chance.children.append(ChanceOutcome(handle=result.child, leaf_value_p1=value_p1))
 
 
@@ -320,18 +307,18 @@ def puct_expand_one(
     """
     node = root
     depth = 0
-    max_depth = 50  # safety bound to prevent infinite loops
 
-    while depth < max_depth:
+    while depth < _MAX_DESCENT_DEPTH:
         cell = puct_select_cell(node, config)
         if cell is None:
-            return False  # tree is fully expanded at this node
-
-        chance = node.grid.get(cell)
-
-        if chance is None:
-            # Dead cell (SimError during expansion) — select shouldn't return these
             return False
+
+        i, j = cell
+        chance = node.grid[cell]  # puct_select_cell only returns live cells
+
+        # Track which actions were selected so PUCT exploration decays per action
+        node.info["p1"].visits[i] += 1
+        node.info["p2"].visits[j] += 1
 
         # Widen: ChanceNode needs more outcome children
         if len(chance.children) < config.max_chance_children:
@@ -340,25 +327,14 @@ def puct_expand_one(
 
         # Full ChanceNode — find a frontier leaf to deepen, or an expanded child to descend
         expanded_child = None
-        unexpanded_outcome: ChanceOutcome | None = None
         for outcome in chance.children:
-            if outcome.node is None:
-                unexpanded_outcome = outcome
-                break
-            if not outcome.node.expanded:
-                unexpanded_outcome = outcome
-                break
-            # Fully expanded — potential descent target
+            if outcome.node is None or not outcome.node.expanded:
+                new_node = _expand_child_turn_node(outcome, sim, net, config)
+                return new_node is not None
             if expanded_child is None:
                 expanded_child = outcome.node
 
-        if unexpanded_outcome is not None:
-            # Deepen: expand this frontier leaf into a TurnNode
-            new_node = _expand_child_turn_node(unexpanded_outcome, sim, net, config)
-            return new_node is not None
-
         if expanded_child is not None:
-            # Descend: move down one level and repeat
             node = expanded_child
             depth += 1
         else:

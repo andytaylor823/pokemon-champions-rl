@@ -58,11 +58,7 @@ def cfr_update_recursive(node: TurnNode, iteration: int) -> float:
         if chance.children:
             child_values = []
             for outcome in chance.children:
-                # Recurse into expanded children; use CVPN/terminal value otherwise
-                if outcome.node is not None:
-                    child_val = cfr_update_recursive(outcome.node, iteration)
-                else:
-                    child_val = outcome.leaf_value_p1
+                child_val = cfr_update_recursive(outcome.node, iteration) if outcome.node is not None else outcome.leaf_value_p1
                 child_values.append(child_val)
             # Uniform-weighted average over sampled chance outcomes
             cfv_grid[i, j] = sum(child_values) / len(child_values)
@@ -80,13 +76,36 @@ def cfr_update_recursive(node: TurnNode, iteration: int) -> float:
     instant_regret_p1 = v_p1_actions - node_value_p1
     info_p1.regret = np.maximum(0.0, info_p1.regret + instant_regret_p1)
     info_p1.strategy_sum += iteration * sigma_p1
-    info_p1.visits += 1
 
     # Update p2 regrets and strategy sum
     node_value_p2 = float(sigma_p2 @ v_p2_actions)
     instant_regret_p2 = v_p2_actions - node_value_p2
     info_p2.regret = np.maximum(0.0, info_p2.regret + instant_regret_p2)
     info_p2.strategy_sum += iteration * sigma_p2
-    info_p2.visits += 1
 
     return node_value_p1
+
+
+def tree_value(node: TurnNode) -> float:
+    """p1's counterfactual value under the current regret-matched strategy.
+
+    Read-only: no regret, strategy_sum, or visit mutation.  Uses the same
+    marginalization as cfr_update_recursive but skips the three write lines.
+    """
+    info_p1 = node.info["p1"]
+    info_p2 = node.info["p2"]
+
+    sigma_p1 = regret_matching(info_p1.regret)
+    sigma_p2 = regret_matching(info_p2.regret)
+
+    k_p1 = len(info_p1.actions)
+    k_p2 = len(info_p2.actions)
+    cfv_grid = np.zeros((k_p1, k_p2))
+
+    for (i, j), chance in node.grid.items():
+        if chance.children:
+            child_values = [tree_value(o.node) if o.node is not None else o.leaf_value_p1 for o in chance.children]
+            cfv_grid[i, j] = sum(child_values) / len(child_values)
+
+    v_p1_actions = cfv_grid @ sigma_p2
+    return float(sigma_p1 @ v_p1_actions)

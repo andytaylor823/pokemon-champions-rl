@@ -7,9 +7,11 @@ working after the single-file → package refactor.
 from search.cfr import (
     cfr_update_recursive,
     regret_matching,
+    tree_value,
 )
 from search.core import search
 from search.expansion import (
+    cvpn_value,
     expand_turn_node,
     puct_expand_one,
     puct_scores,
@@ -34,6 +36,7 @@ __all__ = [
     "TurnNode",
     "build_policy_target",
     "cfr_update_recursive",
+    "cvpn_value",
     "expand_turn_node",
     "extract_average_strategy",
     "puct_expand_one",
@@ -41,4 +44,5 @@ __all__ = [
     "puct_select_cell",
     "regret_matching",
     "search",
+    "tree_value",
 ]

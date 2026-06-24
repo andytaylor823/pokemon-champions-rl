@@ -20,9 +20,10 @@ def extract_average_strategy(node: TurnNode, side: str) -> dict[int, float]:
     """Extract the average strategy sigma-bar for one side at a node.
 
     Returns a dict mapping canonical action indices to probabilities.
+    Both sides are guaranteed to have a valid InfoSet after expansion.
     """
-    info = node.info.get(side)
-    if info is None or len(info.actions) == 0:
+    info = node.info[side]
+    if len(info.actions) == 0:
         return {}
 
     total = info.strategy_sum.sum()

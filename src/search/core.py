@@ -18,12 +18,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-import torch
 
 from action_space import A, legal_mask
-from encoder import encode
-from search.cfr import cfr_update_recursive
-from search.expansion import expand_turn_node, puct_expand_one
+from search.cfr import cfr_update_recursive, tree_value
+from search.expansion import cvpn_value, expand_turn_node, puct_expand_one
 from search.strategy import build_policy_target, extract_average_strategy
 from search.types import SearchConfig, SearchResult, TurnNode
 
@@ -31,6 +29,43 @@ if TYPE_CHECKING:
     from cvpn import CVPN
     from sim_client import SimClient
     from state_types import StateView
+
+
+def _single_move_result(
+    view: StateView,
+    net: CVPN,
+) -> SearchResult | None:
+    """Short-circuit when every acting side has exactly one legal action.
+
+    Returns a SearchResult with deterministic strategy, or None if any side
+    has more than one legal action (meaning real search is needed).
+    """
+    sides = view.to_move
+    forced_actions: dict[str, int] = {}
+
+    for s in sides:
+        mask = legal_mask(view.legal.get(s), view.phase)
+        legal_count = int(mask.sum())
+        if legal_count == 1:
+            forced_actions[s] = int(np.argmax(mask))
+        else:
+            assert legal_count > 0, f"Side {s} in to_move has 0 legal actions"
+            return None
+
+    strategy: dict[str, dict[int, float]] = {}
+    policy_target: dict[str, np.ndarray] = {}
+    for s in sides:
+        action_idx = forced_actions[s]
+        strategy[s] = {action_idx: 1.0}
+        pt = np.zeros(A, dtype=np.float32)
+        pt[action_idx] = 1.0
+        policy_target[s] = pt
+
+    return SearchResult(
+        strategy=strategy,
+        value=cvpn_value(net, view),
+        policy_target=policy_target,
+    )
 
 
 def search(
@@ -56,40 +91,11 @@ def search(
     if config is None:
         config = SearchConfig()
 
-    # --- Single-legal-move skip ---
+    skip = _single_move_result(view, net)
+    if skip is not None:
+        return skip
+
     sides = view.to_move
-    forced_actions: dict[str, int] = {}
-    all_single = True
-
-    for s in sides:
-        mask = legal_mask(view.legal.get(s), view.phase)
-        legal_count = int(mask.sum())
-        if legal_count == 1:
-            forced_actions[s] = int(np.argmax(mask))
-        else:
-            # 0 legal actions shouldn't happen for a to_move side in a non-terminal
-            assert legal_count > 0, f"Side {s} in to_move has 0 legal actions"
-            all_single = False
-            break
-
-    if all_single:
-        # Every acting side has exactly one legal action — no search needed
-        strategy: dict[str, dict[int, float]] = {}
-        policy_target: dict[str, np.ndarray] = {}
-        for s in sides:
-            action_idx = forced_actions[s]
-            strategy[s] = {action_idx: 1.0}
-            pt = np.zeros(A, dtype=np.float32)
-            pt[action_idx] = 1.0
-            policy_target[s] = pt
-
-        # Get a value estimate from CVPN for the training target
-        with torch.no_grad():
-            obs = encode(view, "p1")
-            _, value = net(obs)
-            value_p1 = float(value.item())
-
-        return SearchResult(strategy=strategy, value=value_p1, policy_target=policy_target)
 
     # --- Open a search session from the provided handle ---
     root_session, root_handle, root_view = sim.open_search(from_handle=from_handle)
@@ -117,11 +123,8 @@ def search(
             # Phase B: PUCT-guided expansion of one node
             puct_expand_one(root, sim, net, config)
 
-        # --- Final CFR+ pass to compute the deep value ---
-        # One more traversal to get the root's CFV under the converged strategy,
-        # recursing through all expanded children (not just depth 1).
-        final_iteration = config.expansion_budget * config.cfr_iters_per_expansion + 1
-        value_p1 = cfr_update_recursive(root, final_iteration)
+        # Read-only value query under the converged strategy (no mutation)
+        value_p1 = tree_value(root)
 
         # --- Extract results ---
         strategy_out: dict[str, dict[int, float]] = {}

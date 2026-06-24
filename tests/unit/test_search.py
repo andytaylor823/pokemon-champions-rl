@@ -13,7 +13,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 import torch
 
 from search import (
@@ -29,9 +28,9 @@ from search import (
     puct_scores,
     regret_matching,
     search,
+    tree_value,
 )
 from search.expansion import puct_expand_one, puct_select_cell
-
 
 # ---------------------------------------------------------------------------
 # Regret matching+ tests
@@ -285,9 +284,8 @@ class TestDeepRecursion:
         for t in range(1, 101):
             cfr_update_recursive(root, t)
 
-        # Child must have been visited (regrets updated by recursion)
-        assert child_node.info["p1"].visits.sum() > 0, "CFR+ did not recurse into child"
-        assert child_node.info["p1"].strategy_sum.sum() > 0, "Child strategy sum not accumulated"
+        # Child must have been visited (strategy_sum accumulated by recursion)
+        assert child_node.info["p1"].strategy_sum.sum() > 0, "CFR+ did not recurse into child"
 
         # The root's value for cell (0,0) should reflect the child's deep value,
         # not the stale leaf_value_p1=0.5. After CFR+ on the child, p1 should
@@ -296,6 +294,51 @@ class TestDeepRecursion:
         child_sigma = regret_matching(child_node.info["p1"].regret)
         child_value = float(child_sigma @ np.array([0.9, 0.1]))
         assert child_value > 0.5, f"Child value {child_value} should exceed stale leaf value 0.5"
+
+    def test_tree_value_does_not_mutate_strategy_sum(self):
+        """Regression: tree_value must be read-only — no strategy_sum perturbation.
+
+        Previously the final value extraction called cfr_update_recursive (which
+        mutates regret, strategy_sum, and visits) with the largest iteration
+        weight, skewing the average strategy that extract_average_strategy reads
+        immediately after.
+        """
+        mock_view = MagicMock()
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        node.info = {
+            "p1": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.array([2.0, 1.0]),
+                strategy_sum=np.array([100.0, 200.0]),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+            "p2": InfoSet(
+                actions=[0, 1],
+                prior=np.array([0.5, 0.5]),
+                regret=np.array([1.0, 3.0]),
+                strategy_sum=np.array([150.0, 50.0]),
+                visits=np.zeros(2, dtype=np.int64),
+            ),
+        }
+        node.expanded = True
+        node.grid = {
+            (0, 0): ChanceNode(children=[ChanceOutcome(handle=1, leaf_value_p1=1.0)]),
+            (0, 1): ChanceNode(children=[ChanceOutcome(handle=2, leaf_value_p1=-1.0)]),
+            (1, 0): ChanceNode(children=[ChanceOutcome(handle=3, leaf_value_p1=-1.0)]),
+            (1, 1): ChanceNode(children=[ChanceOutcome(handle=4, leaf_value_p1=1.0)]),
+        }
+
+        # Snapshot strategy_sum before the call
+        p1_sum_before = node.info["p1"].strategy_sum.copy()
+        p2_sum_before = node.info["p2"].strategy_sum.copy()
+
+        val = tree_value(node)
+
+        # tree_value must not touch strategy_sum, regret, or visits
+        np.testing.assert_array_equal(node.info["p1"].strategy_sum, p1_sum_before)
+        np.testing.assert_array_equal(node.info["p2"].strategy_sum, p2_sum_before)
+        assert isinstance(val, float)
 
 
 # ---------------------------------------------------------------------------
@@ -390,18 +433,16 @@ class TestTreeDeepening:
         mock_sim.view.return_value = mock_view
 
         mock_net = MagicMock()
-        # Policy logits + value for the child expansion
         import action_space as as_mod
         mock_net.return_value = (torch.zeros(2, as_mod.A), torch.tensor([0.5, 0.5]))
 
-        with patch("search.expansion.encode") as mock_encode, \
-             patch("search.expansion.collate_obs_bundles") as mock_collate, \
-             patch("search.expansion.legal_mask") as mock_legal_mask:
-            mock_encode.return_value = MagicMock()
-            mock_collate.return_value = MagicMock()
-            # Return a mask with 2 legal actions
-            mock_legal_mask.return_value = np.array([1, 1] + [0] * (as_mod.A - 2), dtype=np.float32)
+        # Build a mock obs bundle with a proper action_mask (2 legal actions)
+        action_mask = torch.tensor([True, True] + [False] * (as_mod.A - 2))
+        mock_obs = MagicMock()
+        mock_obs.__getitem__ = lambda self, key: action_mask if key == "action_mask" else MagicMock()
 
+        with patch("search.expansion.encode", return_value=mock_obs), \
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
             result = puct_expand_one(node, mock_sim, mock_net, config=config)
 
         # The expansion should have deepened: outcome.node should now be set
@@ -490,13 +531,12 @@ class TestTreeDeepening:
         import action_space as as_mod
         mock_net.return_value = (torch.zeros(2, as_mod.A), torch.tensor([0.6, 0.6]))
 
-        with patch("search.expansion.encode") as mock_encode, \
-             patch("search.expansion.collate_obs_bundles") as mock_collate, \
-             patch("search.expansion.legal_mask") as mock_legal_mask:
-            mock_encode.return_value = MagicMock()
-            mock_collate.return_value = MagicMock()
-            mock_legal_mask.return_value = np.array([1, 1] + [0] * (as_mod.A - 2), dtype=np.float32)
+        action_mask = torch.tensor([True, True] + [False] * (as_mod.A - 2))
+        mock_obs = MagicMock()
+        mock_obs.__getitem__ = lambda self, key: action_mask if key == "action_mask" else MagicMock()
 
+        with patch("search.expansion.encode", return_value=mock_obs), \
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
             result = puct_expand_one(root, mock_sim, mock_net, config=config)
 
         # Descent should have gone root → depth2_child → expanded depth-3 leaf
@@ -580,7 +620,7 @@ class TestPUCTScores:
     """Test the PUCT score computation."""
 
     def test_exploration_bonus_decreases_with_visits(self):
-        """Actions that have been visited more should have lower exploration bonus."""
+        """Actions visited more often should have a lower exploration bonus."""
         mock_view = MagicMock()
         node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
         node.info = {
@@ -599,6 +639,55 @@ class TestPUCTScores:
         # Action 2 (0 visits) should have highest exploration bonus
         # Action 0 (10 visits) should have lowest
         assert scores[2] > scores[1] > scores[0]
+
+    def test_puct_expand_produces_nonuniform_visits(self):
+        """Regression: puct_expand_one must increment per-action visit counts.
+
+        Previously visits was incremented uniformly (+1 to the whole array) in
+        cfr_update_recursive, making the PUCT exploration term degenerate to
+        prior * constant.  After the fix, only the selected cell's action
+        indices get incremented, so a 2-action node with one cell expanded
+        should have visits [1, 0] — not [1, 1].
+        """
+        mock_view = MagicMock()
+        mock_view.terminal = False
+        mock_view.to_move = ["p1", "p2"]
+        mock_view.legal = {
+            "p1": {"active": [{"moves": [{"id": "thunderbolt"}, {"id": "protect"}]}]},
+            "p2": {"active": [{"moves": [{"id": "flamethrower"}]}]},
+        }
+        mock_view.phase = "move"
+
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        node.info = {
+            "p1": InfoSet.from_actions([0, 1], np.array([0.5, 0.5])),
+            "p2": InfoSet.from_actions([0], np.array([1.0])),
+        }
+        node.expanded = True
+
+        # Two cells: (0,0) has room to widen, (1,0) also has room
+        config = SearchConfig(max_chance_children=2, k_actions=2)
+        node.grid = {
+            (0, 0): ChanceNode(children=[ChanceOutcome(handle=1, leaf_value_p1=0.5)]),
+            (1, 0): ChanceNode(children=[ChanceOutcome(handle=2, leaf_value_p1=0.3)]),
+        }
+
+        mock_sim = MagicMock()
+        mock_sim.step.return_value = MagicMock(
+            view=MagicMock(terminal=True, utility={"p1": 0.5}),
+            child=99,
+        )
+
+        mock_net = MagicMock()
+        result = puct_expand_one(node, mock_sim, mock_net, config)
+        assert result is True
+
+        # The selected cell's action should have visits=1; the other should stay at 0
+        p1_visits = node.info["p1"].visits
+        assert p1_visits.sum() == 1, f"Expected exactly one action incremented, got {p1_visits}"
+        assert (p1_visits[0] == 1) != (p1_visits[1] == 1), (
+            f"Visits should be non-uniform: {p1_visits}"
+        )
 
     def test_prior_biases_scores(self):
         """Higher prior probability should increase the PUCT score."""
@@ -691,8 +780,8 @@ class TestSingleLegalMoveSkip:
         mock_value = torch.tensor(0.3)
         mock_net.return_value = (torch.zeros(as_mod.A), mock_value)
 
-        # Patch encode to return a dummy ObsBundle
-        with patch("search.core.encode") as mock_encode:
+        # Patch encode in expansion.py (where cvpn_value calls it)
+        with patch("search.expansion.encode") as mock_encode:
             mock_obs = MagicMock()
             mock_encode.return_value = mock_obs
 
@@ -702,7 +791,7 @@ class TestSingleLegalMoveSkip:
         # Each side's strategy should have exactly one action with mass 1.0
         for s in ["p1", "p2"]:
             assert len(result.strategy[s]) == 1
-            assert list(result.strategy[s].values())[0] == 1.0
+            assert next(iter(result.strategy[s].values())) == 1.0
         # Value should come from the CVPN
         assert abs(result.value - 0.3) < 1e-5
         # open_search should NOT have been called (skipped search)

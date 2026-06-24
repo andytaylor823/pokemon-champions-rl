@@ -1,3 +1,17 @@
+---
+description: Standing rule — ensure every battle-state mechanic is tested in the encoder/action-space suite
+globs: src/encoder.py,src/action_space.py,src/state_types.py,src/obs_bundle.py,tests/unit/test_encoder.py,tests/unit/test_action_space.py
+alwaysApply: false
+last_synced: a39ccc9
+watches:
+  - src/encoder.py
+  - src/action_space.py
+  - src/state_types.py
+  - src/obs_bundle.py
+  - tests/unit/test_encoder.py
+  - tests/unit/test_action_space.py
+---
+
 # Battle-State Test Completeness — Standing Rule
 
 ## When this rule fires

@@ -1,5 +1,5 @@
 ---
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - src/
   - sim/src/
@@ -12,8 +12,8 @@ watches:
 
 ## Status
 
-Not yet started.
+Phase 1 implementation complete. Module: `src/action_space.py`.
 
 ## Scope
 
-Stable canonical index `0..A` over all joint actions. Legality expressed as a mask. Translation between index and Showdown choice strings lives in SimClient. Open decision: flat joint head vs per-Pokémon factored heads.
+Flat joint action space (`A = 1089`): 360 team-preview orderings + 729 move-phase joint actions (27 per-slot actions x 27). Legality expressed as a boolean mask. Per-slot decomposition: 4 moves x 3 targets = 12 base + 12 mega + 2 switches + 1 pass = 27. Translation between canonical index and Showdown choice strings (`index_to_choice_string`, `choice_string_to_index`) lives in this module. The CVPN policy head is a single flat `[A]` softmax over this space.

@@ -2,7 +2,7 @@
 description: Verified pokemon-showdown sync-API facts for driving battles in SimClient (clone, reseed, introspect)
 globs: sim/src/**/*.ts,src/sim_client.py
 alwaysApply: false
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - sim/src/
   - sim/package.json

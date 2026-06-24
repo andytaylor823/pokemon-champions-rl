@@ -2,7 +2,7 @@
 description: Test runners, directory layout, layers, and how to run tests for both TypeScript (Vitest) and Python (pytest)
 globs: tests/**/*.py,sim/tests/**/*.ts
 alwaysApply: false
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - tests/
   - sim/tests/
@@ -30,9 +30,27 @@ sim/tests/                         # TypeScript tests (Vitest)
 
 tests/                             # Python tests (pytest)
   conftest.py                      # shared fixtures (sim_client session fixture)
+  fixtures/
+    real_snapshot.json             # real engine snapshot for deterministic tests
   unit/                            # fast, no subprocesses
+    test_action_space.py
+    test_cvpn.py
+    test_encoder.py
+    test_obs_bundle.py
+    test_sim_client_validation.py
+    test_state_types.py
+    test_vocab.py
+    search/                        # search sub-package unit tests
+      test_types.py
+      test_core.py
+      test_expansion.py
+      test_cfr.py
+      test_strategy.py
   integration/                     # multi-component (e.g. SimClient ↔ Node worker)
     test_sim_client.py
+    test_encoder_pipeline.py
+    test_cvpn_pipeline.py
+    test_search.py
   e2e/                             # full system tests
 ```
 

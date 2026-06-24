@@ -1,7 +1,7 @@
 ---
 description: How to validate Pokemon team legality for Champions Reg M-A without reading the full data/legal/* files
 alwaysApply: true
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - scripts/check_team_legality.py
   - data/legal/

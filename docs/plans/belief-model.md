@@ -1,5 +1,5 @@
 ---
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - src/meta_priors/
   - docs/architecture/

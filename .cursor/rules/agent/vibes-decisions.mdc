@@ -1,6 +1,9 @@
 ---
 description: Tracker of vibes-based design decisions — read when making or revisiting architectural choices
 alwaysApply: false
+last_synced: a39ccc9
+watches:
+  - docs/vibes-decisions.md
 ---
 
 # Vibes-Based Decisions

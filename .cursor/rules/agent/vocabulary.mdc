@@ -1,6 +1,9 @@
 ---
 description: Canonical project vocabulary — ensures consistent terminology across all agent responses
 alwaysApply: true
+last_synced: a39ccc9
+watches:
+  - CONTEXT.md
 ---
 
 # Project Vocabulary

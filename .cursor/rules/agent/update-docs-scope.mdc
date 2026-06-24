@@ -1,7 +1,7 @@
 ---
 description: Scoping rule for the /update-docs skill — limits audits to cursor rules and plans docs only
 alwaysApply: false
-last_synced: 3c3811f
+last_synced: a39ccc9
 watches:
   - .cursor/rules/
   - docs/plans/

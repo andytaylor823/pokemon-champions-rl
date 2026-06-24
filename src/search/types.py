@@ -7,15 +7,12 @@ package. No algorithmic logic beyond ChanceNode.value_p1.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
 
     from state_types import StateView
-
-Side = str  # "p1" | "p2"
 
 
 # ---------------------------------------------------------------------------
@@ -48,13 +45,18 @@ class SearchResult:
 # ---------------------------------------------------------------------------
 
 
-class NodeKind(Enum):
-    """Discriminant for search tree nodes."""
+@dataclass
+class ChanceOutcome:
+    """One sampled outcome world under a joint action cell.
 
-    TURN = auto()  # both players to move (simultaneous)
-    UNILATERAL = auto()  # one player to move (forced switch)
-    CHANCE = auto()  # stochastic outcome of a joint action
-    TERMINAL = auto()  # game over — real payoff available
+    Starts as a frontier leaf (node=None, value from CVPN or terminal utility).
+    When expanded during PUCT tree growth, node is set in-place to the child
+    TurnNode so CFR+ can recurse through it directly — no external registry needed.
+    """
+
+    handle: int  # SimClient handle for this outcome world
+    leaf_value_p1: float  # CVPN value or terminal utility — used until expanded
+    node: TurnNode | None = None  # set in-place when this outcome becomes a decision node
 
 
 @dataclass
@@ -63,13 +65,16 @@ class TurnNode:
 
     Holds two info sets (one per player), each with regret/strategy-sum tables.
     Children are ChanceNodes indexed by (action_idx_p1, action_idx_p2).
+
+    Both sides always have valid arrays after expansion: the non-acting side in
+    a unilateral node gets a single no-op action, so CFR/PUCT code can assume
+    both p1 and p2 entries exist without conditional fallbacks.
     """
 
     handle: int  # SimClient handle for this state
     view: StateView
-    kind: NodeKind  # TURN or UNILATERAL
 
-    # Which sides must act (["p1", "p2"] for TURN, one side for UNILATERAL)
+    # Which sides must act (["p1", "p2"] for simultaneous, one side for unilateral)
     to_move: list[str] = field(default_factory=list)
 
     # Top-k action indices per side (set at expansion time)
@@ -99,15 +104,14 @@ class TurnNode:
 class ChanceNode:
     """A chance node representing one joint cell (a1, a2) with sampled outcomes.
 
-    Holds up to K outcome worlds with uniform weights. CFV = weighted average.
+    Holds up to K outcome worlds with uniform weights. CFV = uniform average.
     """
 
-    # Outcome children: list of (handle, cached_value_p1) tuples
-    children: list[tuple[int, float]] = field(default_factory=list)
+    children: list[ChanceOutcome] = field(default_factory=list)
 
     @property
     def value_p1(self) -> float:
-        """Uniform-weighted average of child values (p1 perspective)."""
+        """Uniform-weighted average of child leaf values (p1 perspective)."""
         if not self.children:
             return 0.0
-        return sum(v for _, v in self.children) / len(self.children)
+        return sum(o.leaf_value_p1 for o in self.children) / len(self.children)

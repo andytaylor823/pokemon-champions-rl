@@ -16,8 +16,8 @@ import torch
 from action_space import index_to_choice_string, legal_mask
 from encoder import encode
 from obs_bundle import ObsBundle, collate_obs_bundles
-from search.cfr import _expanded_children, _regret_matching
-from search.types import ChanceNode, NodeKind, SearchConfig, TurnNode
+from search.cfr import _regret_matching
+from search.types import ChanceNode, ChanceOutcome, SearchConfig, TurnNode
 from sim_client import SimError
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def _puct_scores(node: TurnNode, side: str) -> np.ndarray:
+def _puct_scores(node: TurnNode, side: str, config: SearchConfig) -> np.ndarray:
     """Compute PUCT scores for one side's actions at this node.
 
     score(I, a) = sigma^t(I, a) + c_puct * P(I, a) * sqrt(sum_b N(I, b)) / (1 + N(I, a))
@@ -40,16 +40,7 @@ def _puct_scores(node: TurnNode, side: str) -> np.ndarray:
     prior = node.policy_prior[side]
     visits = node.visit_counts[side].astype(np.float64)
     total_visits = visits.sum()
-    exploration = prior * (np.sqrt(total_visits) / (1.0 + visits))
-    return sigma + node._c_puct * exploration  # type: ignore[attr-defined]
-
-
-def _puct_scores_with_config(node: TurnNode, side: str, config: SearchConfig) -> np.ndarray:
-    """Compute PUCT scores using the config's c_puct value."""
-    sigma = _regret_matching(node.cumulative_regret[side])
-    prior = node.policy_prior[side]
-    visits = node.visit_counts[side].astype(np.float64)
-    total_visits = visits.sum()
+    # PUCT exploration term: prior-weighted, visit-decaying bonus
     exploration = prior * (np.sqrt(total_visits) / (1.0 + visits))
     return sigma + config.c_puct * exploration
 
@@ -59,13 +50,15 @@ def _puct_select_cell(node: TurnNode, config: SearchConfig) -> tuple[int, int] |
 
     Returns (p1_pos, p2_pos) index into the top-k grid, or None if fully expanded.
     """
-    # Compute PUCT scores for each side and pick the joint cell with highest combined score
-    sides = node.to_move
     k_p1 = len(node.actions.get("p1", []))
     k_p2 = len(node.actions.get("p2", []))
 
-    scores_p1 = _puct_scores_with_config(node, "p1", config) if "p1" in sides and k_p1 > 0 else np.array([1.0])
-    scores_p2 = _puct_scores_with_config(node, "p2", config) if "p2" in sides and k_p2 > 0 else np.array([1.0])
+    if k_p1 == 0 or k_p2 == 0:
+        return None
+
+    # Both sides always have valid arrays after expansion (no conditional fallback)
+    scores_p1 = _puct_scores(node, "p1", config)
+    scores_p2 = _puct_scores(node, "p2", config)
 
     # Joint score = outer product; pick the cell with highest combined score
     joint_scores = np.outer(scores_p1, scores_p2)
@@ -82,21 +75,38 @@ def _puct_select_cell(node: TurnNode, config: SearchConfig) -> tuple[int, int] |
         if len(chance.children) < config.max_chance_children:
             return (i, j)
         # Check if any child below is an unexpanded TurnNode candidate
-        for child_handle, _ in chance.children:
-            child_node = _expanded_children.get(child_handle)
-            if child_node is not None and not child_node.expanded:
+        for outcome in chance.children:
+            if outcome.node is not None and not outcome.node.expanded:
                 return (i, j)
     return None
 
 
 # ---------------------------------------------------------------------------
-# Expansion (CVPN batch evaluation + SimClient steps)
+# Expansion helpers
 # ---------------------------------------------------------------------------
 
 
 def _generate_seed() -> list[int]:
     """Generate a fresh random 4-element seed for SimClient reseeding."""
     return [random.randint(0, 2**31 - 1) for _ in range(4)]
+
+
+def _cell_choices(node: TurnNode, i: int, j: int) -> dict[str, str]:
+    """Build the SimClient choice dict for grid cell (i, j).
+
+    Only includes acting sides — the non-acting side's placeholder action is
+    not sent to SimClient.
+    """
+    choices: dict[str, str] = {}
+    for side, idx in (("p1", i), ("p2", j)):
+        if side in node.to_move:
+            choices[side] = index_to_choice_string(node.actions[side][idx])
+    return choices
+
+
+# ---------------------------------------------------------------------------
+# Expansion (CVPN batch evaluation + SimClient steps)
+# ---------------------------------------------------------------------------
 
 
 def _expand_turn_node(
@@ -108,7 +118,10 @@ def _expand_turn_node(
 ) -> None:
     """Expand a TurnNode: compute policy priors, select top-k, step all grid cells.
 
-    Performs one batched CVPN forward for 2 + k^2 token bundles.
+    Performs one batched CVPN forward for 2 + k^2 token bundles. Guarantees
+    both sides have valid arrays after expansion: the non-acting side in a
+    unilateral node gets a single no-op action, so CFR/PUCT code can assume
+    both p1 and p2 entries exist without conditional fallbacks.
     """
     view = node.view
     sides = node.to_move
@@ -127,7 +140,7 @@ def _expand_turn_node(
         prior_batch = collate_obs_bundles(obs_bundles)
         prior_logits, _ = net(prior_batch)  # [num_sides, A]
 
-    # Extract top-k per side
+    # Extract top-k per acting side
     for idx, s in enumerate(sides):
         logits = prior_logits[idx]  # [A]
         # Apply legal mask to get valid probabilities
@@ -159,10 +172,11 @@ def _expand_turn_node(
         node.strategy_sum[s] = np.zeros(k, dtype=np.float64)
         node.visit_counts[s] = np.zeros(k, dtype=np.int64)
 
-    # Handle unilateral nodes — the non-acting side gets a single no-op
-    for s in ["p1", "p2"]:
+    # Centralized no-op padding: non-acting sides get a single placeholder action
+    # so CFR/PUCT can assume both p1 and p2 always have valid arrays
+    for s in ("p1", "p2"):
         if s not in sides:
-            node.actions[s] = [0]  # placeholder single action
+            node.actions[s] = [0]
             node.policy_prior[s] = np.array([1.0])
             node.cumulative_regret[s] = np.zeros(1, dtype=np.float64)
             node.strategy_sum[s] = np.zeros(1, dtype=np.float64)
@@ -179,12 +193,7 @@ def _expand_turn_node(
     grid_results: list[tuple[int, int, StepResult]] = []
     for i in range(k_p1):
         for j in range(k_p2):
-            # Build the choice dict for this cell
-            choices: dict[str, str] = {}
-            if "p1" in sides:
-                choices["p1"] = index_to_choice_string(node.actions["p1"][i])
-            if "p2" in sides:
-                choices["p2"] = index_to_choice_string(node.actions["p2"][j])
+            choices = _cell_choices(node, i, j)
 
             # Step with a fresh seed to sample a chance outcome.
             # Guard against mask/engine discrepancies (e.g. target types the mask
@@ -210,7 +219,7 @@ def _expand_turn_node(
         if child_view.terminal:
             # Terminal — use real payoff, no CVPN needed
             utility_p1 = child_view.utility.get("p1", 0.0) if child_view.utility else 0.0
-            chance = ChanceNode(children=[(result.child, utility_p1)])
+            chance = ChanceNode(children=[ChanceOutcome(handle=result.child, leaf_value_p1=utility_p1)])
             node.grid[(i, j)] = chance
         else:
             # Non-terminal — encode for CVPN value evaluation (from p1 perspective)
@@ -226,7 +235,7 @@ def _expand_turn_node(
 
         for idx, (i, j, child_handle, _child_view) in enumerate(child_info):
             value_p1 = float(values[idx].item())
-            chance = ChanceNode(children=[(child_handle, value_p1)])
+            chance = ChanceNode(children=[ChanceOutcome(handle=child_handle, leaf_value_p1=value_p1)])
             node.grid[(i, j)] = chance
 
     node.expanded = True
@@ -246,13 +255,7 @@ def _expand_chance_child(
         return
 
     # Build the choice for this cell and step with a new seed
-    sides = node.to_move
-    choices: dict[str, str] = {}
-    if "p1" in sides:
-        choices["p1"] = index_to_choice_string(node.actions["p1"][i])
-    if "p2" in sides:
-        choices["p2"] = index_to_choice_string(node.actions["p2"][j])
-
+    choices = _cell_choices(node, i, j)
     seed = _generate_seed()
     try:
         result = sim.step(node.handle, choices, seed)
@@ -262,45 +265,45 @@ def _expand_chance_child(
 
     if child_view.terminal:
         utility_p1 = child_view.utility.get("p1", 0.0) if child_view.utility else 0.0
-        chance.children.append((result.child, utility_p1))
+        chance.children.append(ChanceOutcome(handle=result.child, leaf_value_p1=utility_p1))
     else:
         # CVPN evaluation for the new world
         with torch.no_grad():
             obs = encode(child_view, "p1")
             _, value = net(obs)
             value_p1 = float(value.item())
-        chance.children.append((result.child, value_p1))
+        chance.children.append(ChanceOutcome(handle=result.child, leaf_value_p1=value_p1))
 
 
 def _expand_child_turn_node(
-    child_handle: int,
+    outcome: ChanceOutcome,
     sim: SimClient,
     net: CVPN,
     session: int,
     config: SearchConfig,
 ) -> TurnNode | None:
-    """Expand a frontier leaf into a full TurnNode (if it's a decision point)."""
-    child_view = sim.view(child_handle)
+    """Expand a frontier leaf into a full TurnNode (if it's a decision point).
+
+    Sets outcome.node in-place so CFR+ and PUCT can traverse the child directly
+    without an external registry.
+    """
+    child_view = sim.view(outcome.handle)
 
     if child_view.terminal:
         return None
 
-    # Determine node kind based on to_move
-    if len(child_view.to_move) == 2:
-        kind = NodeKind.TURN
-    elif len(child_view.to_move) == 1:
-        kind = NodeKind.UNILATERAL
-    else:
+    # No acting sides means nothing to decide (shouldn't happen for non-terminals)
+    if not child_view.to_move:
         return None
 
     child_node = TurnNode(
-        handle=child_handle,
+        handle=outcome.handle,
         view=child_view,
-        kind=kind,
         to_move=child_view.to_move,
     )
     _expand_turn_node(child_node, sim, net, session, config)
-    _expanded_children[child_handle] = child_node
+    # Wire the child into the tree so CFR+ recurses through it directly
+    outcome.node = child_node
     return child_node
 
 
@@ -339,25 +342,23 @@ def _puct_expand_one(
             return True
 
         # Descend into the best child of this ChanceNode
-        # Pick the child with the most "need" for expansion (least explored)
         expanded_child = None
-        unexpanded_handle = None
-        for child_handle, _ in chance.children:
-            child_node = _expanded_children.get(child_handle)
-            if child_node is None:
-                # This is a frontier leaf — expand it
-                unexpanded_handle = child_handle
+        unexpanded_outcome: ChanceOutcome | None = None
+        for outcome in chance.children:
+            if outcome.node is None:
+                # Frontier leaf — expand it
+                unexpanded_outcome = outcome
                 break
-            if not child_node.expanded:
-                unexpanded_handle = child_handle
+            if not outcome.node.expanded:
+                unexpanded_outcome = outcome
                 break
             # Already expanded — potential descent target
             if expanded_child is None:
-                expanded_child = child_node
+                expanded_child = outcome.node
 
-        if unexpanded_handle is not None:
+        if unexpanded_outcome is not None:
             # Expand this frontier leaf into a TurnNode
-            new_node = _expand_child_turn_node(unexpanded_handle, sim, net, session, config)
+            new_node = _expand_child_turn_node(unexpanded_outcome, sim, net, session, config)
             return new_node is not None
 
         if expanded_child is not None:

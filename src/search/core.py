@@ -22,10 +22,10 @@ import torch
 
 from action_space import A, legal_mask
 from encoder import encode
-from search.cfr import _cfr_update_recursive, _regret_matching
+from search.cfr import _cfr_update_recursive
 from search.expansion import _expand_turn_node, _puct_expand_one
 from search.strategy import _build_policy_target, _extract_average_strategy
-from search.types import NodeKind, SearchConfig, SearchResult, TurnNode
+from search.types import SearchConfig, SearchResult, TurnNode
 
 if TYPE_CHECKING:
     from cvpn import CVPN
@@ -53,10 +53,6 @@ def search(
     Returns:
         SearchResult with the average strategy, value, and policy targets.
     """
-    import search.cfr as _cfr_mod  # late import to mutate the module-level registry
-
-    _cfr_mod._expanded_children = {}
-
     if config is None:
         config = SearchConfig()
 
@@ -104,18 +100,13 @@ def search(
         # Use the cloned root's view (it should match the provided view)
         effective_view = root_view if root_view is not None else view
 
-        # Determine node kind
-        if len(sides) == 2:
-            kind = NodeKind.TURN
-        elif len(sides) == 1:
-            kind = NodeKind.UNILATERAL
-        else:
+        # No acting sides — nothing to search
+        if not sides:
             return SearchResult(strategy={}, value=0.0, policy_target={s: np.zeros(A, dtype=np.float32) for s in sides})
 
         root = TurnNode(
             handle=root_handle,
             view=effective_view,
-            kind=kind,
             to_move=sides,
         )
 
@@ -132,6 +123,12 @@ def search(
             # Phase B: PUCT-guided expansion of one node
             _puct_expand_one(root, sim, net, root_session, config)
 
+        # --- Final CFR+ pass to compute the deep value ---
+        # One more traversal to get the root's CFV under the converged strategy,
+        # recursing through all expanded children (not just depth 1).
+        final_iteration = config.expansion_budget * config.cfr_iters_per_expansion + 1
+        value_p1 = _cfr_update_recursive(root, final_iteration)
+
         # --- Extract results ---
         strategy_out: dict[str, dict[int, float]] = {}
         policy_target_out: dict[str, np.ndarray] = {}
@@ -140,39 +137,8 @@ def search(
             strategy_out[s] = _extract_average_strategy(root, s)
             policy_target_out[s] = _build_policy_target(root, s)
 
-        # Value: the root's CFV from p1 perspective (from the last CFR update)
-        sigma_p1 = _regret_matching(root.cumulative_regret.get("p1", np.array([1.0])))
-        sigma_p2 = _regret_matching(root.cumulative_regret.get("p2", np.array([1.0])))
-
-        k_p1 = len(root.actions.get("p1", []))
-        k_p2 = len(root.actions.get("p2", []))
-        cfv_grid = np.zeros((k_p1, k_p2))
-        for (i, j), chance in root.grid.items():
-            if chance.children:
-                child_values = []
-                for child_handle, cached_val in chance.children:
-                    child_node = _cfr_mod._expanded_children.get(child_handle)
-                    if child_node is not None:
-                        s1 = _regret_matching(child_node.cumulative_regret.get("p1", np.array([1.0])))
-                        s2 = _regret_matching(child_node.cumulative_regret.get("p2", np.array([1.0])))
-                        child_grid = np.zeros((len(child_node.actions.get("p1", [])), len(child_node.actions.get("p2", []))))
-                        for (ci, cj), cchance in child_node.grid.items():
-                            child_grid[ci, cj] = cchance.value_p1
-                        child_val = float(s1 @ (child_grid @ s2)) if child_grid.size > 0 else cached_val
-                    else:
-                        child_val = cached_val
-                    child_values.append(child_val)
-                cfv_grid[i, j] = sum(child_values) / len(child_values)
-
-        if cfv_grid.size > 0:
-            v_p1_actions = cfv_grid @ sigma_p2
-            value_p1 = float(sigma_p1 @ v_p1_actions)
-        else:
-            value_p1 = 0.0
-
     finally:
-        # Clean up the search session
+        # Clean up the search session (frees all cloned handles)
         sim.close_search(root_session)
-        _cfr_mod._expanded_children = {}
 
     return SearchResult(strategy=strategy_out, value=value_p1, policy_target=policy_target_out)

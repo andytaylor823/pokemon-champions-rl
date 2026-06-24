@@ -5,6 +5,7 @@ Tests the core algorithmic components with mocked SimClient + CVPN:
 - Single-legal-move skip
 - PUCT selection logic
 - Average strategy extraction
+- Deep tree recursion through ChanceOutcome.node references
 """
 from __future__ import annotations
 
@@ -16,15 +17,14 @@ import torch
 
 from search import (
     ChanceNode,
-    NodeKind,
+    ChanceOutcome,
     SearchConfig,
     SearchResult,
     TurnNode,
     _build_policy_target,
     _cfr_update_recursive,
-    _expanded_children,
     _extract_average_strategy,
-    _puct_scores_with_config,
+    _puct_scores,
     _regret_matching,
     search,
 )
@@ -87,7 +87,6 @@ class TestCFRConvergence:
 
     def _make_matching_pennies_node(self) -> TurnNode:
         """Create a TurnNode representing the Matching Pennies game."""
-        # Create a mock view
         mock_view = MagicMock()
         mock_view.to_move = ["p1", "p2"]
         mock_view.terminal = False
@@ -95,7 +94,6 @@ class TestCFRConvergence:
         node = TurnNode(
             handle=0,
             view=mock_view,
-            kind=NodeKind.TURN,
             to_move=["p1", "p2"],
         )
 
@@ -107,43 +105,33 @@ class TestCFRConvergence:
         node.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(2, dtype=np.int64)}
         node.expanded = True
 
-        # Payoff matrix from p1's perspective:
-        # (H,H) = +1, (H,T) = -1, (T,H) = -1, (T,T) = +1
+        # Payoff matrix from p1's perspective: (H,H)=+1, (H,T)=-1, (T,H)=-1, (T,T)=+1
         node.grid = {
-            (0, 0): ChanceNode(children=[(100, 1.0)]),
-            (0, 1): ChanceNode(children=[(101, -1.0)]),
-            (1, 0): ChanceNode(children=[(102, -1.0)]),
-            (1, 1): ChanceNode(children=[(103, 1.0)]),
+            (0, 0): ChanceNode(children=[ChanceOutcome(handle=100, leaf_value_p1=1.0)]),
+            (0, 1): ChanceNode(children=[ChanceOutcome(handle=101, leaf_value_p1=-1.0)]),
+            (1, 0): ChanceNode(children=[ChanceOutcome(handle=102, leaf_value_p1=-1.0)]),
+            (1, 1): ChanceNode(children=[ChanceOutcome(handle=103, leaf_value_p1=1.0)]),
         }
 
         return node
 
     def test_converges_to_nash(self):
         """After many CFR+ iterations, average strategy should converge to 50/50."""
-        import search.cfr as search_cfr
+        node = self._make_matching_pennies_node()
 
-        # Temporarily clear the expanded children registry
-        old_expanded = search_cfr._expanded_children
-        search_cfr._expanded_children = {}
+        # Run many CFR+ iterations
+        for t in range(1, 1001):
+            _cfr_update_recursive(node, t)
 
-        try:
-            node = self._make_matching_pennies_node()
+        # Extract average strategy
+        sigma_bar_p1 = _extract_average_strategy(node, "p1")
+        sigma_bar_p2 = _extract_average_strategy(node, "p2")
 
-            # Run many CFR+ iterations
-            for t in range(1, 1001):
-                _cfr_update_recursive(node, t)
-
-            # Extract average strategy
-            sigma_bar_p1 = _extract_average_strategy(node, "p1")
-            sigma_bar_p2 = _extract_average_strategy(node, "p2")
-
-            # Both should be close to 50/50
-            assert abs(sigma_bar_p1.get(0, 0) - 0.5) < 0.05
-            assert abs(sigma_bar_p1.get(1, 0) - 0.5) < 0.05
-            assert abs(sigma_bar_p2.get(0, 0) - 0.5) < 0.05
-            assert abs(sigma_bar_p2.get(1, 0) - 0.5) < 0.05
-        finally:
-            search_cfr._expanded_children = old_expanded
+        # Both should be close to 50/50
+        assert abs(sigma_bar_p1.get(0, 0) - 0.5) < 0.05
+        assert abs(sigma_bar_p1.get(1, 0) - 0.5) < 0.05
+        assert abs(sigma_bar_p2.get(0, 0) - 0.5) < 0.05
+        assert abs(sigma_bar_p2.get(1, 0) - 0.5) < 0.05
 
     def test_converges_asymmetric_game(self):
         """Test convergence on an asymmetric game.
@@ -165,50 +153,102 @@ class TestCFRConvergence:
 
         So Nash is: P1 plays (1/4, 3/4), P2 plays (1/4, 3/4).
         """
-        import search.cfr as search_cfr
+        mock_view = MagicMock()
+        mock_view.to_move = ["p1", "p2"]
 
-        old_expanded = search_cfr._expanded_children
-        search_cfr._expanded_children = {}
+        node = TurnNode(
+            handle=0,
+            view=mock_view,
+            to_move=["p1", "p2"],
+        )
 
-        try:
-            mock_view = MagicMock()
-            mock_view.to_move = ["p1", "p2"]
+        node.actions = {"p1": [0, 1], "p2": [0, 1]}
+        node.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([0.5, 0.5])}
+        node.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(2)}
+        node.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(2)}
+        node.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(2, dtype=np.int64)}
+        node.expanded = True
 
-            node = TurnNode(
-                handle=0,
-                view=mock_view,
-                kind=NodeKind.TURN,
-                to_move=["p1", "p2"],
-            )
+        # P1's payoffs: (U,L)=3, (U,R)=0, (D,L)=0, (D,R)=1
+        node.grid = {
+            (0, 0): ChanceNode(children=[ChanceOutcome(handle=100, leaf_value_p1=3.0)]),
+            (0, 1): ChanceNode(children=[ChanceOutcome(handle=101, leaf_value_p1=0.0)]),
+            (1, 0): ChanceNode(children=[ChanceOutcome(handle=102, leaf_value_p1=0.0)]),
+            (1, 1): ChanceNode(children=[ChanceOutcome(handle=103, leaf_value_p1=1.0)]),
+        }
 
-            node.actions = {"p1": [0, 1], "p2": [0, 1]}
-            node.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([0.5, 0.5])}
-            node.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(2)}
-            node.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(2)}
-            node.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(2, dtype=np.int64)}
-            node.expanded = True
+        for t in range(1, 2001):
+            _cfr_update_recursive(node, t)
 
-            # P1's payoffs: (U,L)=3, (U,R)=0, (D,L)=0, (D,R)=1
-            node.grid = {
-                (0, 0): ChanceNode(children=[(100, 3.0)]),
-                (0, 1): ChanceNode(children=[(101, 0.0)]),
-                (1, 0): ChanceNode(children=[(102, 0.0)]),
-                (1, 1): ChanceNode(children=[(103, 1.0)]),
-            }
+        sigma_bar_p1 = _extract_average_strategy(node, "p1")
+        sigma_bar_p2 = _extract_average_strategy(node, "p2")
 
-            for t in range(1, 2001):
-                _cfr_update_recursive(node, t)
+        # P1 should play ~(0.25, 0.75), P2 should play ~(0.25, 0.75)
+        assert abs(sigma_bar_p1.get(0, 0) - 0.25) < 0.05
+        assert abs(sigma_bar_p1.get(1, 0) - 0.75) < 0.05
+        assert abs(sigma_bar_p2.get(0, 0) - 0.25) < 0.05
+        assert abs(sigma_bar_p2.get(1, 0) - 0.75) < 0.05
 
-            sigma_bar_p1 = _extract_average_strategy(node, "p1")
-            sigma_bar_p2 = _extract_average_strategy(node, "p2")
 
-            # P1 should play ~(0.25, 0.75), P2 should play ~(0.25, 0.75)
-            assert abs(sigma_bar_p1.get(0, 0) - 0.25) < 0.05
-            assert abs(sigma_bar_p1.get(1, 0) - 0.75) < 0.05
-            assert abs(sigma_bar_p2.get(0, 0) - 0.25) < 0.05
-            assert abs(sigma_bar_p2.get(1, 0) - 0.75) < 0.05
-        finally:
-            search_cfr._expanded_children = old_expanded
+# ---------------------------------------------------------------------------
+# Deep tree recursion regression test
+# ---------------------------------------------------------------------------
+
+
+class TestDeepRecursion:
+    """Regression: CFR+ must recurse through expanded ChanceOutcome.node refs.
+
+    Catches the aliasing bug where a module-global registry split across modules
+    silently prevented recursion beyond depth 1.
+    """
+
+    def test_cfr_recurses_into_child_nodes(self):
+        """Values from depth-2 nodes propagate back up through _cfr_update_recursive."""
+        mock_view = MagicMock()
+
+        # Child node at depth 2: a 2x1 game with known payoffs
+        child_node = TurnNode(handle=10, view=mock_view, to_move=["p1", "p2"])
+        child_node.actions = {"p1": [0, 1], "p2": [0]}
+        child_node.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([1.0])}
+        child_node.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(1)}
+        child_node.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(1)}
+        child_node.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(1, dtype=np.int64)}
+        child_node.expanded = True
+        child_node.grid = {
+            (0, 0): ChanceNode(children=[ChanceOutcome(handle=20, leaf_value_p1=0.9)]),
+            (1, 0): ChanceNode(children=[ChanceOutcome(handle=21, leaf_value_p1=0.1)]),
+        }
+
+        # Root node: cell (0,0) points to the child, cell (1,0) is a leaf
+        root = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
+        root.actions = {"p1": [0, 1], "p2": [0]}
+        root.policy_prior = {"p1": np.array([0.5, 0.5]), "p2": np.array([1.0])}
+        root.cumulative_regret = {"p1": np.zeros(2), "p2": np.zeros(1)}
+        root.strategy_sum = {"p1": np.zeros(2), "p2": np.zeros(1)}
+        root.visit_counts = {"p1": np.zeros(2, dtype=np.int64), "p2": np.zeros(1, dtype=np.int64)}
+        root.expanded = True
+        root.grid = {
+            # Cell (0,0): expanded child — CFR+ must recurse into it
+            (0, 0): ChanceNode(children=[ChanceOutcome(handle=10, leaf_value_p1=0.5, node=child_node)]),
+            # Cell (1,0): frontier leaf — uses cached value
+            (1, 0): ChanceNode(children=[ChanceOutcome(handle=11, leaf_value_p1=0.3)]),
+        }
+
+        # Run CFR+ — should recurse into child_node
+        for t in range(1, 101):
+            _cfr_update_recursive(root, t)
+
+        # Child must have been visited (regrets updated by recursion)
+        assert child_node.visit_counts["p1"].sum() > 0, "CFR+ did not recurse into child"
+        assert child_node.strategy_sum["p1"].sum() > 0, "Child strategy sum not accumulated"
+
+        # The root's value for cell (0,0) should reflect the child's deep value,
+        # not the stale leaf_value_p1=0.5. After CFR+ on the child, p1 should
+        # favor action 0 (value 0.9) over action 1 (value 0.1), making the
+        # child's converged value closer to 0.9 than to 0.5.
+        child_sigma = _regret_matching(child_node.cumulative_regret["p1"])
+        child_value = float(child_sigma @ np.array([0.9, 0.1]))
+        assert child_value > 0.5, f"Child value {child_value} should exceed stale leaf value 0.5"
 
 
 # ---------------------------------------------------------------------------
@@ -222,14 +262,14 @@ class TestPUCTScores:
     def test_exploration_bonus_decreases_with_visits(self):
         """Actions that have been visited more should have lower exploration bonus."""
         mock_view = MagicMock()
-        node = TurnNode(handle=0, view=mock_view, kind=NodeKind.TURN, to_move=["p1", "p2"])
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
         node.actions = {"p1": [0, 1, 2]}
         node.policy_prior = {"p1": np.array([0.33, 0.33, 0.34])}
         node.cumulative_regret = {"p1": np.zeros(3)}
         node.visit_counts = {"p1": np.array([10, 1, 0], dtype=np.int64)}
 
         config = SearchConfig(c_puct=2.0)
-        scores = _puct_scores_with_config(node, "p1", config)
+        scores = _puct_scores(node, "p1", config)
 
         # Action 2 (0 visits) should have highest exploration bonus
         # Action 0 (10 visits) should have lowest
@@ -238,17 +278,16 @@ class TestPUCTScores:
     def test_prior_biases_scores(self):
         """Higher prior probability should increase the PUCT score."""
         mock_view = MagicMock()
-        node = TurnNode(handle=0, view=mock_view, kind=NodeKind.TURN, to_move=["p1", "p2"])
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
         node.actions = {"p1": [0, 1]}
         # Strong prior on action 0
         node.policy_prior = {"p1": np.array([0.9, 0.1])}
         node.cumulative_regret = {"p1": np.zeros(2)}
         # Need at least one total visit for the exploration bonus to activate
-        # (sqrt(0) = 0 kills the prior term entirely when N_total = 0)
         node.visit_counts = {"p1": np.array([1, 1], dtype=np.int64)}
 
         config = SearchConfig(c_puct=2.0)
-        scores = _puct_scores_with_config(node, "p1", config)
+        scores = _puct_scores(node, "p1", config)
 
         # Higher prior -> higher score (when visits are equal)
         assert scores[0] > scores[1]
@@ -256,7 +295,7 @@ class TestPUCTScores:
     def test_c_puct_scales_exploration(self):
         """Higher c_puct should increase the exploration component."""
         mock_view = MagicMock()
-        node = TurnNode(handle=0, view=mock_view, kind=NodeKind.TURN, to_move=["p1", "p2"])
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
         node.actions = {"p1": [0, 1]}
         node.policy_prior = {"p1": np.array([0.5, 0.5])}
         node.cumulative_regret = {"p1": np.array([1.0, 0.0])}
@@ -265,8 +304,8 @@ class TestPUCTScores:
         config_low = SearchConfig(c_puct=0.5)
         config_high = SearchConfig(c_puct=5.0)
 
-        scores_low = _puct_scores_with_config(node, "p1", config_low)
-        scores_high = _puct_scores_with_config(node, "p1", config_high)
+        scores_low = _puct_scores(node, "p1", config_low)
+        scores_high = _puct_scores(node, "p1", config_high)
 
         # With higher c_puct, the less-visited action should be more competitive
         gap_low = scores_low[0] - scores_low[1]
@@ -346,7 +385,7 @@ class TestStrategyExtraction:
     def test_extracts_normalized_strategy(self):
         """Strategy sum is normalized to probabilities."""
         mock_view = MagicMock()
-        node = TurnNode(handle=0, view=mock_view, kind=NodeKind.TURN, to_move=["p1", "p2"])
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1", "p2"])
         node.actions = {"p1": [10, 20, 30]}
         node.strategy_sum = {"p1": np.array([100.0, 200.0, 300.0])}
 
@@ -359,7 +398,7 @@ class TestStrategyExtraction:
     def test_uniform_fallback_when_no_iterations(self):
         """When strategy sum is all zeros, fall back to uniform."""
         mock_view = MagicMock()
-        node = TurnNode(handle=0, view=mock_view, kind=NodeKind.TURN, to_move=["p1"])
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1"])
         node.actions = {"p1": [5, 6]}
         node.strategy_sum = {"p1": np.array([0.0, 0.0])}
 
@@ -372,7 +411,7 @@ class TestStrategyExtraction:
         from action_space import A
 
         mock_view = MagicMock()
-        node = TurnNode(handle=0, view=mock_view, kind=NodeKind.TURN, to_move=["p1"])
+        node = TurnNode(handle=0, view=mock_view, to_move=["p1"])
         node.actions = {"p1": [100, 200, 300]}
         node.strategy_sum = {"p1": np.array([1.0, 2.0, 3.0])}
 
@@ -398,12 +437,16 @@ class TestChanceNode:
 
     def test_single_child_value(self):
         """With one child, value = that child's value."""
-        chance = ChanceNode(children=[(1, 0.7)])
+        chance = ChanceNode(children=[ChanceOutcome(handle=1, leaf_value_p1=0.7)])
         assert abs(chance.value_p1 - 0.7) < 1e-10
 
     def test_multiple_children_uniform_average(self):
         """With multiple children, value = uniform average."""
-        chance = ChanceNode(children=[(1, 0.5), (2, 0.3), (3, 0.8)])
+        chance = ChanceNode(children=[
+            ChanceOutcome(handle=1, leaf_value_p1=0.5),
+            ChanceOutcome(handle=2, leaf_value_p1=0.3),
+            ChanceOutcome(handle=3, leaf_value_p1=0.8),
+        ])
         expected = (0.5 + 0.3 + 0.8) / 3
         assert abs(chance.value_p1 - expected) < 1e-10
 

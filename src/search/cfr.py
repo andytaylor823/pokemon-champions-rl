@@ -32,6 +32,12 @@ def regret_matching(cumulative_regret: np.ndarray) -> np.ndarray:
     positive = np.maximum(cumulative_regret, 0.0)
     total = positive.sum()
     if total > 0:
+        if np.isinf(total):
+            # inf regrets: concentrate mass uniformly on the inf-valued actions
+            inf_mask = np.isinf(positive)
+            result = np.zeros_like(positive)
+            result[inf_mask] = 1.0 / inf_mask.sum()
+            return result
         return positive / total
     # Uniform fallback when all regrets are non-positive
     return np.ones_like(cumulative_regret) / len(cumulative_regret)

@@ -121,16 +121,20 @@ class TestRegretMatching:
         strategy = regret_matching(regret)
         np.testing.assert_allclose(strategy, [0.5, 0.5], atol=1e-10)
 
-    def test_inf_regret_produces_finite_output(self):
-        """Inf in regret should concentrate mass on inf action(s), not produce NaN."""
+    def test_inf_regret_concentrates_on_inf_actions(self):
+        """Inf in regret should concentrate mass uniformly on inf action(s)."""
         regret = np.array([np.inf, 1.0, 0.0])
         strategy = regret_matching(regret)
-        # np.inf / np.inf is NaN, so this tests whether the code handles it
-        # If it does produce NaN, this test documents the behavior
         assert strategy.shape == (3,)
-        # At minimum, no crash; if the sum is finite, it should be 1
-        if np.isfinite(strategy).all():
-            assert abs(strategy.sum() - 1.0) < 1e-10
+        assert np.isfinite(strategy).all(), "Strategy must not contain NaN or inf"
+        np.testing.assert_allclose(strategy, [1.0, 0.0, 0.0])
+
+    def test_multiple_inf_regrets_split_evenly(self):
+        """Multiple inf regrets should split mass uniformly among them."""
+        regret = np.array([np.inf, np.inf, 5.0, 0.0])
+        strategy = regret_matching(regret)
+        assert np.isfinite(strategy).all()
+        np.testing.assert_allclose(strategy, [0.5, 0.5, 0.0, 0.0])
 
     def test_empty_regret_returns_empty(self):
         """Empty regret array (InfoSet.empty()) must not crash with ZeroDivisionError."""

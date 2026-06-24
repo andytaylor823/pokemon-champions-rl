@@ -329,6 +329,8 @@ $$
 
 Note the roles vs. MCTS: the "$Q$-analogue" is the regret-derived current strategy, "$P$" is the policy-head prior (**not** predicted regret), "$N$" is visit counts. The **output** at the root is the **average strategy** $\bar\sigma$ (you sample your real move from it) — not visit counts.
 
+> **Top-k local-maxima risk (deferred).** When the search grid is pruned to top-$k$ actions per side by CVPN policy prior, actions the network currently underrates are never searched, so the network never receives training signal on them — a self-reinforcing blind spot. This is acceptable early (the prior improves each generation, and some good actions will be discovered), but risks converging to a local maximum rather than the global one. Mitigations under consideration: epsilon-greedy injection of random legal actions into the top-$k$ slots, progressive widening, periodic full-width audit searches, and adaptive $k$ (see `docs/plans/search.md` §12.4).
+
 ### 10.3 Where CFVs plug into the equations
 
 The CVPN's CFVs are the **leaf boundary condition** for the CFR backup. At a leaf $\ell$ the search uses $\hat v_i(\ell, I)$ in place of the recursive $u_i^\sigma$; those propagate up to form internal-node values $v_i^t(I,a)$, which feed straight into $r_i^t(I,a) = v_i^t(I,a) - v_i^t(I)$. Net supplies frontier numbers → CFR turns them into regrets → regret matching turns those into the strategy → average is the output.

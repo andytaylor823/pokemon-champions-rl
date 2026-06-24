@@ -1,0 +1,18 @@
+---
+description: Tracker of vibes-based design decisions — read when making or revisiting architectural choices
+alwaysApply: false
+---
+
+# Vibes-Based Decisions
+
+**`docs/vibes-decisions.md`** tracks every design decision not strongly rooted in evidence — choices made on intuition, convention, or reasonable defaults. Read it before proposing, changing, or questioning any architectural or hyperparameter choice.
+
+Each decision has an **impact level** (High / Med / Low) and a **REVISIT trigger** describing when empirical validation should replace the vibes call.
+
+Key high-impact vibes decisions to be aware of:
+- Transformer as backbone (§1.1)
+- Top-k action abstraction per turn-node, k ≈ 6 (§9.7)
+- Conditional belief sampler design (§10.1)
+- Per-slot vs joint-team candidates (§10.2)
+
+When making a design decision: check if `docs/vibes-decisions.md` already covers it, and if so, follow the existing choice unless a REVISIT trigger has fired. When adding a new vibes decision, update the doc rather than scattering rationale across code comments or chat.

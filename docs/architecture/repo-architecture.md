@@ -192,6 +192,8 @@ The caller samples one joint action from `strategy`, plays it via `SimClient`, a
 
 > **Phase-1 search decision (recorded in `docs/plans/search.md`):** Phase 1 builds **GT-CFR directly in the perfect-information regime** — the MCTS pit-stop named in the milestones is skipped, because simultaneous moves make even perfect-info Pokémon an imperfect-information (matrix) game, and the toys + CVPN are already GT-CFR-shaped. See `vibes-decisions.md` §9.1, §9.6–§9.10.
 
+> **Forced-node collapse (flagged from the SelfPlay design).** Forced decisions (every acting side has one legal action) carry no strategic choice; the SelfPlay loop skips them entirely (no CVPN/CFR/tuple) and Search should **collapse** them in-tree rather than instantiate degenerate decision nodes. See `docs/plans/search.md` §8/§12, `docs/plans/self-play.md` §2.2/§11, `vibes-decisions.md` §8.7.
+
 ### 3.6 The action space (a shared contract, not a module)
 
 A **stable canonical index `0..A`** over all joint actions, with legality expressed as a mask (choice-lock, disable, taunt, no-PP, forced-switch all flip mask bits). Three modules code against it: `Encoder` (emits `action_mask`), `CVPN` (policy head width `A`), and `SimClient` (translates an index ↔ a Showdown choice string like `"move heatwave 1, move protect"`). The index↔choice-string translation lives inside `SimClient`. Size ≈ ~100 joint actions/turn (*tentative*; `agent/overview.mdc` §Action Space). Open sub-decision: a single flat joint head vs **per-Pokémon factored heads**.
@@ -209,7 +211,13 @@ run(checkpoint, config) -> stream[TrainingTuple]
 ```
 This tuple is the GT-CFR analogue of AlphaZero's `(s, z, π_MCTS)` and is a **stable seam** between inner and outer loops.
 
-**Implementation.** Worker processes, each owning a `SimClient` (its own Node worker) and reading the latest `CVPN` checkpoint (directly, or via a batched inference server). Parallelism mechanism (Ray vs plain multiprocessing) is an implementation choice, not part of the interface.
+**Design (fleshed — `docs/plans/self-play.md`).** The Phase-1 SelfPlay design is complete (not yet implemented). Key decisions from that grilling:
+- **Generator seam.** `run(net, matchup_source, config) -> Iterator[TrainingTuple]`, flushing one game's worth of tuples at each terminal — SelfPlay knows nothing about `ReplayBuffer`.
+- **Value target = search-refined value (bootstrapping); each tuple *also* tagged with the final result z** (a logged side-signal in Phase 1, requiring per-game buffering). Tuple stores the encoded `ObsBundle` (β) + sparse σ̄. *(vibes 8.4, 8.6)*
+- **Forced decisions are fully skipped** — no `search()`, no CVPN, no CFR, no tuple — in the loop now, and (flagged to `search.md` §8/§12) collapsed inside the search tree. Emission rule: one full tuple per side that had a genuine choice. *(vibes 8.7)*
+- **Team source = a pluggable `MatchupSource`**, defaulting to a deliberate **validation curriculum** of fixed matchups of increasing complexity (Stage 0 = all-Fire vs all-Grass / 2 moves … Stage 3 = balanced teams); per-stage from-scratch (primary) + warm-start (side experiment). *(vibes 8.8)*
+
+**Implementation.** Single-process, sequential games first (in-process net). Later: worker processes, each owning a `SimClient` (its own Node worker) and reading the latest `CVPN` checkpoint (directly, or via a batched inference server). Parallelism mechanism (Ray vs plain multiprocessing) is an implementation choice, not part of the interface *(vibes 8.9, 11.3)*.
 
 **Depth.** Medium — mostly orchestration; its value is concentrating the "play a game, harvest targets" protocol in one place.
 

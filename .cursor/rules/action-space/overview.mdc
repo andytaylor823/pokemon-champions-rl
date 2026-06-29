@@ -39,7 +39,7 @@ For spread/self-targeting moves, the mask restricts to a single canonical target
 
 ## Public API
 
-- **`index_to_choice_string(idx) → str`** — canonical index to Showdown choice string (e.g. `"move 1 1 mega, switch 3"`, `"team 1342"`).
+- **`action_to_choice_contextual(idx, legal_request) → str`** — canonical index to Showdown choice string (e.g. `"move 1 1 mega, switch 3"`, `"team 1342"`). Uses the legal request to strip targets for spread/self/charging moves; pass `None` for context-free conversion.
 - **`choice_string_to_index(choice) → int`** — inverse mapping.
 - **`legal_mask(request, phase) → np.ndarray[A]`** — bool mask from a raw Showdown request object. Handles team preview (all 360 legal), move phase, and force switch.
 

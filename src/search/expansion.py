@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from action_space import action_to_choice_contextual, legal_mask
+from action_space import action_to_choice_contextual, forced_actions, legal_mask
 from encoder import encode
 from obs_bundle import ObsBundle, collate_obs_bundles
 from search.cfr import regret_matching
@@ -109,29 +109,6 @@ def _cell_choices(node: TurnNode, i: int, j: int) -> dict[str, str]:
 _MAX_FORCED_CHAIN = 20
 
 
-def _forced_view_choices(view: StateView) -> dict[str, str] | None:
-    """Return the forced choice dict if every acting side has exactly one legal action.
-
-    Returns None if the state is terminal, has no acting sides, or any side
-    has a genuine choice (more than one legal action).
-    """
-    if view.terminal:
-        return None
-    sides = view.to_move
-    # Guard against non-list to_move or non-dict legal (e.g. unconfigured mocks)
-    if not isinstance(sides, list) or not sides:
-        return None
-    if not isinstance(view.legal, dict):
-        return None
-    choices: dict[str, str] = {}
-    for s in sides:
-        mask = legal_mask(view.legal.get(s), view.phase)
-        if int(mask.sum()) != 1:
-            return None
-        choices[s] = action_to_choice_contextual(int(np.argmax(mask)), view.legal.get(s))
-    return choices
-
-
 def _collapse_forced(
     sim: SimClient,
     handle: int,
@@ -147,12 +124,18 @@ def _collapse_forced(
     or non-acting state encountered.
     """
     for _ in range(_MAX_FORCED_CHAIN):
-        forced_choices = _forced_view_choices(view)
-        if forced_choices is None:
+        if view.terminal:
             break
+        forced = forced_actions(view.legal, view.to_move, view.phase)
+        if forced is None:
+            break
+        choices = {
+            s: action_to_choice_contextual(idx, view.legal.get(s))
+            for s, idx in forced.items()
+        }
         seed = _generate_seed()
         try:
-            result = sim.step(handle, forced_choices, seed)
+            result = sim.step(handle, choices, seed)
         except SimError:
             break
         handle = result.child

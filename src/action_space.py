@@ -177,62 +177,10 @@ def _index_to_slot_action(idx: int) -> SlotAction:
 # --- Public API ---------------------------------------------------------------
 
 
-def index_to_choice_string(action_idx: int) -> str:
-    """Convert a canonical action index to a Showdown choice string.
-
-    For team preview: returns e.g. "team 1342"
-    For move phase: returns e.g. "move 1 1 mega, switch 3"
-    When one slot is a pass, it is omitted (e.g. "move 1 1" with no comma).
-    """
-    if action_idx < TEAM_PREVIEW_OFFSET + TEAM_PREVIEW_COUNT:
-        perm = _index_to_team_perm(action_idx - TEAM_PREVIEW_OFFSET)
-        return f"team {''.join(str(p) for p in perm)}"
-
-    # Move phase joint action
-    joint_idx = action_idx - MOVE_PHASE_OFFSET
-    slot1_idx = joint_idx // ACTIONS_PER_SLOT
-    slot2_idx = joint_idx % ACTIONS_PER_SLOT
-
-    slot1_str = _slot_action_to_choice(slot1_idx, slot_pos=0)
-    slot2_str = _slot_action_to_choice(slot2_idx, slot_pos=1)
-
-    # Showdown assigns comma-separated parts positionally: part 0 → slot 0, etc.
-    # When slot 0 is pass but slot 1 acts, we MUST send "pass, <slot1_choice>"
-    # so Showdown doesn't misattribute the choice to slot 0.
-    if slot1_str and slot2_str:
-        return f"{slot1_str}, {slot2_str}"
-    if slot1_str:
-        return slot1_str
-    if slot2_str:
-        return f"pass, {slot2_str}"
-    return "pass"
-
-
-def _slot_action_to_choice(slot_idx: int, slot_pos: int = 1) -> str:
-    """Convert a per-slot action index to its Showdown choice string fragment.
-
-    Args:
-        slot_idx: Per-slot action index [0, 27).
-        slot_pos: Active slot position (0 or 1) — needed to resolve the
-            ally target number (slot 0 → -2, slot 1 → -1).
-
-    Returns empty string for a pass action.
-    """
-    action = _index_to_slot_action(slot_idx)
-    if isinstance(action, PassAction):
-        return ""
-    if isinstance(action, SwitchAction):
-        return f"switch {action.team_slot}"
-    move_num = action.move_idx + 1
-    mega_str = " mega" if action.mega else ""
-    showdown_target = _canonical_to_showdown_target(action.target, slot_pos)
-    return f"move {move_num} {showdown_target}{mega_str}"
-
-
 def choice_string_to_index(choice: str) -> int:
     """Convert a Showdown choice string to its canonical action index.
 
-    Inverse of index_to_choice_string.
+    Inverse of action_to_choice_contextual.
     """
     choice = choice.strip()
     if choice.startswith("team "):
@@ -354,9 +302,7 @@ def _slot_legal_actions(active: list, side_pokemon: list, slot_idx: int, request
     slot_trapped = slot_data.get("trapped", False)
 
     for move_idx, move in enumerate(moves):
-        # Charging moves have no pp/target fields — always legal, single canonical target
-        is_charging = "pp" not in move
-        if is_charging:
+        if _is_charging(move):
             idx = _slot_action_to_index(move_idx, 1, mega=False, switch_pos=None)
             legal.append(idx)
             continue
@@ -434,6 +380,38 @@ def _valid_targets_for(target_type: str) -> list[int]:
         raise ValueError(f"Unknown Showdown target type: {target_type!r}") from None
 
 
+def _is_charging(move_data: dict) -> bool:
+    """True if this move entry represents a charging/locked multi-turn move.
+
+    Showdown omits both ``pp`` and ``target`` for charging moves (e.g. the
+    second turn of Solar Beam). This is the single predicate both legal_mask
+    and the choice-string builder should use.
+    """
+    return "pp" not in move_data
+
+
+# ---------------------------------------------------------------------------
+# Forced-decision predicate
+# ---------------------------------------------------------------------------
+
+
+def forced_actions(legal: dict, to_move: list[str], phase: str) -> dict[str, int] | None:
+    """Return {side: sole_legal_idx} if every acting side has exactly one legal action.
+
+    Returns None if to_move is empty or any side has more than one legal action
+    (meaning a genuine decision exists).
+    """
+    if not to_move:
+        return None
+    out: dict[str, int] = {}
+    for s in to_move:
+        m = legal_mask(legal.get(s), phase)
+        if int(m.sum()) != 1:
+            return None
+        out[s] = int(np.argmax(m))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Context-aware choice string builder (uses legal request for target stripping)
 # ---------------------------------------------------------------------------
@@ -456,8 +434,7 @@ def _slot_choice_contextual(
 
     if slot_moves and action.move_idx < len(slot_moves):
         move_data = slot_moves[action.move_idx]
-        # Charging moves have no target field — emit bare "move N"
-        if "target" not in move_data:
+        if _is_charging(move_data):
             return f"move {move_num}{mega_str}"
         move_target_type = move_data.get("target", "normal")
         if move_target_type in _NO_TARGET_TYPES:
@@ -470,11 +447,17 @@ def _slot_choice_contextual(
 def action_to_choice_contextual(action_idx: int, legal_request: dict | None) -> str:
     """Convert a canonical action index to a valid Showdown choice string.
 
+    For team preview: returns e.g. "team 1342".
+    For move phase: returns e.g. "move 1 1 mega, switch 3".
+    When one slot is a pass, it is omitted (e.g. "move 1 1" with no comma).
+
     Uses the legal request to strip targets for spread/self/charging moves and
-    to resolve slot-specific ally target numbers.
+    to resolve slot-specific ally target numbers. Pass legal_request=None for
+    context-free conversion (targets are always emitted).
     """
     if action_idx < TEAM_PREVIEW_COUNT:
-        return index_to_choice_string(action_idx)
+        perm = _index_to_team_perm(action_idx - TEAM_PREVIEW_OFFSET)
+        return f"team {''.join(str(p) for p in perm)}"
 
     joint_idx = action_idx - MOVE_PHASE_OFFSET
     slot1_idx = joint_idx // ACTIONS_PER_SLOT

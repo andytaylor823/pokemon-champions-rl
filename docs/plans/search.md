@@ -310,7 +310,7 @@ in Python — `SimClient` is the sole source of truth.)
   is what makes each chance roll a fresh sampled world); `view(handle)`; `close_search(session)`
   frees the whole tree's handles in one shot at the end. Handles are immutable snapshots, so the
   parent stays steppable with other cells/seeds.
-- `src/action_space.py` — `legal_mask(request, phase) -> [A] bool`; `index_to_choice_string(idx)
+- `src/action_space.py` — `legal_mask(request, phase) -> [A] bool`; `action_to_choice_contextual(idx, request)
   -> str` (canonical action index → Showdown choice string for `step`); `choice_string_to_index`;
   constants `A`, `TEAM_PREVIEW_*`, `MOVE_PHASE_*`.
 - `src/encoder.py` — `encode(view, perspective) -> ObsBundle` (perspective ∈ {"p1","p2"}; builds

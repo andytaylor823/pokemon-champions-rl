@@ -19,6 +19,7 @@ import numpy as np
 
 from action_space import (
     action_to_choice_contextual,
+    forced_actions,
     legal_mask,
 )
 from cvpn import CVPN
@@ -112,27 +113,6 @@ class CurriculumMatchupSource:
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
-
-
-def _is_forced(view: StateView) -> bool:
-    """Check if every acting side has exactly one legal action (no real choice)."""
-    if not view.to_move:
-        return False
-    for side in view.to_move:
-        mask = legal_mask(view.legal.get(side), view.phase)
-        if mask.sum() != 1:
-            return False
-    return True
-
-
-def _forced_choices(view: StateView) -> dict[str, str]:
-    """Build the choice dict for a forced decision (single legal action per side)."""
-    choices: dict[str, str] = {}
-    for side in view.to_move:
-        mask = legal_mask(view.legal.get(side), view.phase)
-        action_idx = int(np.argmax(mask))
-        choices[side] = action_to_choice_contextual(action_idx, view.legal.get(side))
-    return choices
 
 
 def _sample_action(
@@ -264,9 +244,15 @@ def run(
                     handle, view = res.child, res.view
                     continue
 
-                # Forced-decision skip: no search, no CVPN, no tuple
-                if _is_forced(view):
-                    choices = _forced_choices(view)
+                # Forced-decision skip: no search, no CVPN, no tuple.
+                # Forced chains are handled by loop re-entry (see _collapse_forced
+                # for the search-side equivalent).
+                forced = forced_actions(view.legal, view.to_move, view.phase)
+                if forced is not None:
+                    choices = {
+                        s: action_to_choice_contextual(idx, view.legal.get(s))
+                        for s, idx in forced.items()
+                    }
                     step_seed = _rng_seed(game_rng)
                     res = sim.step(handle, choices, seed=step_seed)
                     sim.release(handle)
@@ -320,6 +306,7 @@ def run(
                 for _attempt in range(_MAX_STEP_RETRIES):
                     choices: dict[str, str] = {}
                     sampled_indices: dict[str, int] = {}
+                    exhausted = False
                     for side in view.to_move:
                         side_strategy = result.strategy.get(side, {})
                         # Exclude previously-failed actions
@@ -342,15 +329,17 @@ def run(
                             if len(legal_indices) > 0:
                                 action_idx = int(game_rng.choice(legal_indices))
                             else:
-                                # True fallback: pick any legal action
-                                full_mask = legal_mask(
-                                    view.legal.get(side), view.phase
-                                )
-                                action_idx = int(np.argmax(full_mask))
+                                # Every legal action for this side has already
+                                # failed — retrying cannot succeed.
+                                exhausted = True
+                                break
                         sampled_indices[side] = action_idx
                         choices[side] = action_to_choice_contextual(
                             action_idx, view.legal.get(side)
                         )
+
+                    if exhausted:
+                        break
 
                     step_seed = _rng_seed(game_rng)
                     try:

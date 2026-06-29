@@ -94,7 +94,7 @@ successors, so SelfPlay **skips it entirely**:
 
 ```
 if not view.terminal and every side in view.to_move has exactly one legal action:
-    choices = { side: index_to_choice_string(argmax(legal_mask(view.legal[side], view.phase)))
+    choices = { side: action_to_choice_contextual(argmax(legal_mask(view.legal[side], view.phase)))
                 for side in view.to_move }
     advance the live handle with `choices` (fresh seed); DO NOT call search(); emit NOTHING
     loop (chains of forced moves auto-resolve)
@@ -123,7 +123,7 @@ For each non-terminal, non-forced state:
 2. **Buffer** a `TrainingTuple` for each side that had ≥2 legal actions (§4) — held, not yet
    emitted (z is unknown until the game ends).
 3. **Sample** one joint action per acting side from `result.strategy[side]` (∝ σ̄, temperature τ;
-   §3). Translate each to a Showdown choice string via `action_space.index_to_choice_string`.
+   §3). Translate each to a Showdown choice string via `action_space.action_to_choice_contextual`.
 4. **Advance** the live handle with the sampled `choices` and a fresh seed (§2.1); `view` becomes
    the child's view.
 
@@ -296,7 +296,7 @@ multiprocessing is deferred until self-play throughput is the measured bottlenec
 - `src/search/` — `search(view, sim, net, from_handle:int, config:SearchConfig|None) ->
   SearchResult{strategy: dict[Side, dict[int,float]], value: float (p1), policy_target:
   dict[Side, np.ndarray[A]]}`.
-- `src/action_space.py` — `legal_mask(request, phase) -> [A] bool`; `index_to_choice_string(idx)
+- `src/action_space.py` — `legal_mask(request, phase) -> [A] bool`; `action_to_choice_contextual(idx)
   -> str`; constants `A`, `MOVE_PHASE_OFFSET`, etc.
 - `src/encoder.py` — `encode(view, perspective: "p1"|"p2", belief=None) -> ObsBundle`.
 - `src/cvpn.py` — `CVPN(config=None)`; `forward(obs) -> (policy_logits[A], value scalar in
@@ -331,10 +331,10 @@ the ripple lives in one place rather than only being discoverable inline.
 - *Docs:* flag `search.md` §8 (adaptive compute) and §12 (open questions).
 
 **`action_space` (`src/action_space.py`) — verify team-preview choice-string coverage.**
-- *Why:* SelfPlay samples and *plays* team-preview actions (§2.3) via `index_to_choice_string`.
+- *Why:* SelfPlay samples and *plays* team-preview actions (§2.3) via `action_to_choice_contextual`.
   The search integration test plays team preview with a literal `"team 1234"`, so it is unverified
-  that `index_to_choice_string` covers the team-preview region.
-- *Action:* confirm `index_to_choice_string` maps team-preview indices → `"team ...."` strings; add
+  that `action_to_choice_contextual` covers the team-preview region.
+- *Action:* confirm `action_to_choice_contextual` maps team-preview indices → `"team ...."` strings; add
   the mapping if missing. No change if already covered.
 
 **`SimClient` (`src/sim_client.py`) — no change required for Phase 1.**

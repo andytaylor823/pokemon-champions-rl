@@ -20,8 +20,8 @@ from action_space import (
     _legal_switches,
     _slot_action_to_index,
     _valid_targets_for,
+    action_to_choice_contextual,
     choice_string_to_index,
-    index_to_choice_string,
     legal_mask,
 )
 
@@ -133,13 +133,13 @@ class TestChoiceStringRoundTrips:
     """Test index ↔ choice string conversions."""
 
     def test_team_preview_first(self):
-        choice = index_to_choice_string(0)
+        choice = action_to_choice_contextual(0, None)
         assert choice.startswith("team ")
         assert choice_string_to_index(choice) == 0
 
     def test_team_preview_last(self):
         last_idx = TEAM_PREVIEW_COUNT - 1
-        choice = index_to_choice_string(last_idx)
+        choice = action_to_choice_contextual(last_idx, None)
         assert choice.startswith("team ")
         assert choice_string_to_index(choice) == last_idx
 
@@ -147,12 +147,12 @@ class TestChoiceStringRoundTrips:
         # "team 1234" corresponds to permutation (1,2,3,4) which is index 0
         # in lexicographic order of permutations(range(1,7), 4)
         idx = choice_string_to_index("team 1234")
-        assert index_to_choice_string(idx) == "team 1234"
+        assert action_to_choice_contextual(idx, None) == "team 1234"
 
     def test_team_preview_roundtrip_sample(self):
         # Test a spread of indices across team preview range
         for i in range(0, TEAM_PREVIEW_COUNT, 30):
-            choice = index_to_choice_string(i)
+            choice = action_to_choice_contextual(i, None)
             assert choice_string_to_index(choice) == i
 
     def test_move_phase_basic_move(self):
@@ -160,7 +160,7 @@ class TestChoiceStringRoundTrips:
         slot1_idx = _slot_action_to_index(0, 1, False, None)
         slot2_idx = _slot_action_to_index(0, 1, False, None)
         idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
-        choice = index_to_choice_string(idx)
+        choice = action_to_choice_contextual(idx, None)
         assert "move 1 1" in choice
         assert choice_string_to_index(choice) == idx
 
@@ -169,7 +169,7 @@ class TestChoiceStringRoundTrips:
         slot1_idx = _slot_action_to_index(0, 1, True, None)  # 12
         slot2_idx = _slot_action_to_index(None, None, False, 1)  # 24
         joint_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
-        choice = index_to_choice_string(joint_idx)
+        choice = action_to_choice_contextual(joint_idx, None)
         assert "mega" in choice
         assert "switch 3" in choice
         assert choice_string_to_index(choice) == joint_idx
@@ -179,7 +179,7 @@ class TestChoiceStringRoundTrips:
         slot1_idx = _slot_action_to_index(None, None, False, 1)  # switch to team slot 3
         slot2_idx = _slot_action_to_index(None, None, False, 2)  # switch to team slot 4
         joint_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
-        choice = index_to_choice_string(joint_idx)
+        choice = action_to_choice_contextual(joint_idx, None)
         assert "switch 3" in choice
         assert "switch 4" in choice
         assert choice_string_to_index(choice) == joint_idx
@@ -188,7 +188,7 @@ class TestChoiceStringRoundTrips:
         # Slot1 is a move, slot2 is pass (single-mon endgame)
         slot1_idx = _slot_action_to_index(0, 1, False, None)
         joint_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + PASS_INDEX
-        choice = index_to_choice_string(joint_idx)
+        choice = action_to_choice_contextual(joint_idx, None)
         # Pass is omitted — only slot1's choice appears
         assert choice == "move 1 1"
         assert choice_string_to_index(choice) == joint_idx
@@ -196,7 +196,7 @@ class TestChoiceStringRoundTrips:
     def test_move_phase_roundtrip_sample(self):
         # Sample move-phase indices at regular intervals
         for i in range(MOVE_PHASE_OFFSET, A, 50):
-            choice = index_to_choice_string(i)
+            choice = action_to_choice_contextual(i, None)
             assert choice_string_to_index(choice) == i
 
 
@@ -599,7 +599,7 @@ class TestShowdownFormatParsing:
     def test_joint_with_targetless_slot(self):
         """'move 2, switch 3' — targetless move in slot1, switch in slot2."""
         idx = choice_string_to_index("move 2, switch 3")
-        choice = index_to_choice_string(idx)
+        choice = action_to_choice_contextual(idx, None)
         assert "switch 3" in choice
 
     @pytest.mark.parametrize("fragment,expected_move,expected_target,expected_mega", [

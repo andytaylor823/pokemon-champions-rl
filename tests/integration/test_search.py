@@ -18,7 +18,7 @@ from action_space import (
     MOVE_PHASE_OFFSET,
     MoveAction,
     _index_to_slot_action,
-    index_to_choice_string,
+    action_to_choice_contextual,
     legal_mask,
 )
 from cvpn import CVPN
@@ -231,7 +231,7 @@ class TestSearchFromForceSwitch:
             for _attempt in range(10):
                 choices = {}
                 for s in current_view.to_move:
-                    choices[s] = index_to_choice_string(_pick_aggressive(masks[s], rng))
+                    choices[s] = action_to_choice_contextual(_pick_aggressive(masks[s], rng), None)
                 try:
                     step_res = sim_client.step(current_handle, choices, seed=_rng_seed(rng))
                     current_handle = step_res.child

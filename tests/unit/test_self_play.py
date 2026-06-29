@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from action_space import forced_actions
 from self_play import (
     CurriculumMatchupSource,
     SelfPlayConfig,
@@ -21,8 +22,6 @@ from self_play import (
     TrainingTuple,
     TupleMeta,
     _PendingTuple,
-    _forced_choices,
-    _is_forced,
     _sample_action,
     run,
 )
@@ -51,70 +50,42 @@ def _make_view(
 
 
 # ---------------------------------------------------------------------------
-# Tests: _is_forced
+# Tests: forced_actions (canonical helper from action_space)
 # ---------------------------------------------------------------------------
 
 
-class TestIsForced:
-    """Tests for forced-decision detection."""
+class TestForcedActions:
+    """Tests for the canonical forced-decision predicate."""
 
-    def test_empty_to_move_is_not_forced(self):
-        """Empty to_move means no one acts — not a forced decision."""
-        view = _make_view(to_move=[])
-        assert _is_forced(view) is False
+    def test_empty_to_move_returns_none(self):
+        """Empty to_move means no one acts — not forced."""
+        assert forced_actions({}, [], "move") is None
 
-    @patch("self_play.legal_mask")
-    def test_single_legal_action_both_sides_is_forced(self, mock_mask):
-        """Both sides have exactly one legal action -> forced."""
+    @patch("action_space.legal_mask")
+    def test_single_legal_action_both_sides(self, mock_mask):
+        """Both sides have exactly one legal action -> returns forced indices."""
         mock_mask.return_value = np.array([False, True, False, False, False])
-        view = _make_view(to_move=["p1", "p2"], legal={"p1": {}, "p2": {}})
-        assert _is_forced(view) is True
-        assert mock_mask.call_count == 2
+        result = forced_actions({"p1": {}, "p2": {}}, ["p1", "p2"], "move")
+        assert result == {"p1": 1, "p2": 1}
 
-    @patch("self_play.legal_mask")
-    def test_multiple_legal_actions_not_forced(self, mock_mask):
+    @patch("action_space.legal_mask")
+    def test_multiple_legal_actions_returns_none(self, mock_mask):
         """One side has multiple legal actions -> not forced."""
         mock_mask.return_value = np.array([True, True, False, False, False])
-        view = _make_view(to_move=["p1", "p2"], legal={"p1": {}, "p2": {}})
-        assert _is_forced(view) is False
+        assert forced_actions({"p1": {}, "p2": {}}, ["p1", "p2"], "move") is None
 
-    @patch("self_play.legal_mask")
-    def test_unilateral_single_action_is_forced(self, mock_mask):
+    @patch("action_space.legal_mask")
+    def test_unilateral_single_action(self, mock_mask):
         """One side acting with one legal action -> forced."""
         mock_mask.return_value = np.array([False, False, True, False, False])
-        view = _make_view(to_move=["p1"], legal={"p1": {}})
-        assert _is_forced(view) is True
+        result = forced_actions({"p1": {}}, ["p1"], "move")
+        assert result == {"p1": 2}
 
-    @patch("self_play.legal_mask")
-    def test_unilateral_multiple_actions_not_forced(self, mock_mask):
+    @patch("action_space.legal_mask")
+    def test_unilateral_multiple_actions_returns_none(self, mock_mask):
         """One side acting with multiple legal actions -> not forced."""
         mock_mask.return_value = np.array([True, False, True, False, False])
-        view = _make_view(to_move=["p1"], legal={"p1": {}})
-        assert _is_forced(view) is False
-
-
-# ---------------------------------------------------------------------------
-# Tests: _forced_choices
-# ---------------------------------------------------------------------------
-
-
-class TestForcedChoices:
-    """Tests for building choice strings from forced decisions."""
-
-    @patch("self_play.action_to_choice_contextual")
-    @patch("self_play.legal_mask")
-    def test_returns_choice_for_each_side(self, mock_mask, mock_ctx_choice):
-        """Should return one choice string per acting side."""
-        # Mask with single legal action at index 2
-        mock_mask.return_value = np.array([False, False, True, False])
-        mock_ctx_choice.return_value = "team 1234"
-        view = _make_view(to_move=["p1", "p2"], legal={"p1": {}, "p2": {}})
-
-        choices = _forced_choices(view)
-        assert choices == {"p1": "team 1234", "p2": "team 1234"}
-        assert mock_ctx_choice.call_count == 2
-        # Both calls should pass index 2 and the legal request
-        mock_ctx_choice.assert_any_call(2, {})
+        assert forced_actions({"p1": {}}, ["p1"], "move") is None
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +213,9 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
+    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_max_decisions_aborts_game(self, mock_mask, mock_encode, mock_search):
+    def test_max_decisions_aborts_game(self, mock_mask, _mock_forced, mock_encode, mock_search):
         """Exceeding max_decisions should discard all tuples for that game."""
         # Configure mask to always have multiple legal actions (never forced)
         mask_arr = np.zeros(10, dtype=bool)
@@ -283,8 +255,9 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
+    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_z_stamping_on_terminal(self, mock_mask, mock_encode, mock_search):
+    def test_z_stamping_on_terminal(self, mock_mask, _mock_forced, mock_encode, mock_search):
         """Tuples should be stamped with the correct z from utility at terminal."""
         # First call: multiple legal (not forced), triggers search
         mask_multi = np.zeros(10, dtype=bool)
@@ -333,8 +306,9 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
+    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_value_negated_for_p2(self, mock_mask, mock_encode, mock_search):
+    def test_value_negated_for_p2(self, mock_mask, _mock_forced, mock_encode, mock_search):
         """p2's value target should be the negation of p1's search value."""
         mask_multi = np.zeros(10, dtype=bool)
         mask_multi[0] = True
@@ -375,21 +349,11 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.legal_mask")
-    def test_forced_decision_emits_no_tuples(self, mock_mask, mock_encode, mock_search):
+    @patch("self_play.forced_actions")
+    def test_forced_decision_emits_no_tuples(self, mock_forced, mock_encode, mock_search):
         """Forced decisions should produce zero tuples and skip search."""
-        call_count = [0]
-
-        def mask_side_effect(request, phase):
-            call_count[0] += 1
-            if call_count[0] <= 2:
-                # First state: forced (single legal for both sides)
-                return np.array([False, True, False])
-            else:
-                # After step: also forced but with different index
-                return np.array([False, True, False])
-
-        mock_mask.side_effect = mask_side_effect
+        # forced_actions returns forced indices on first call, then None (terminal)
+        mock_forced.return_value = {"p1": 1, "p2": 1}
 
         sim = MagicMock()
         # Initial: forced decision
@@ -419,9 +383,13 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
+    @patch("self_play.forced_actions")
     @patch("self_play.legal_mask")
-    def test_unilateral_emits_one_tuple(self, mock_mask, mock_encode, mock_search):
+    def test_unilateral_emits_one_tuple(self, mock_mask, mock_forced, mock_encode, mock_search):
         """A unilateral decision (one side forced, one choosing) emits 1 tuple."""
+        # Not forced overall (p1 has a genuine choice)
+        mock_forced.return_value = None
+
         # Use distinct sentinel objects to differentiate p1 vs p2 requests
         p1_request = {"_side": "p1"}
         p2_request = {"_side": "p2"}
@@ -468,8 +436,9 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
+    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_sim_error_discards_game(self, mock_mask, mock_encode, mock_search):
+    def test_sim_error_discards_game(self, mock_mask, _mock_forced, mock_encode, mock_search):
         """SimError mid-game should discard all tuples and continue."""
         from sim_client import SimError
 
@@ -485,8 +454,9 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
+    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_multiple_games(self, mock_mask, mock_encode, mock_search):
+    def test_multiple_games(self, mock_mask, _mock_forced, mock_encode, mock_search):
         """Running multiple games should yield tuples from all of them."""
         mask_multi = np.zeros(10, dtype=bool)
         mask_multi[0] = True
@@ -528,8 +498,9 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
+    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_meta_fields_populated(self, mock_mask, mock_encode, mock_search):
+    def test_meta_fields_populated(self, mock_mask, _mock_forced, mock_encode, mock_search):
         """TupleMeta should contain correct generation, game_id, decision_idx, phase, side."""
         mask_multi = np.zeros(10, dtype=bool)
         mask_multi[0] = True

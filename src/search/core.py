@@ -17,9 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
-
-from action_space import A, legal_mask
+from action_space import forced_actions
 from search.cfr import cfr_update_recursive, tree_value
 from search.expansion import expand_turn_node, puct_expand_one
 from search.strategy import build_policy_target, extract_average_strategy
@@ -29,49 +27,6 @@ if TYPE_CHECKING:
     from cvpn import CVPN
     from sim_client import SimClient
     from state_types import StateView
-
-
-def _single_move_result(
-    view: StateView,
-) -> SearchResult | None:
-    """Short-circuit when every acting side has exactly one legal action.
-
-    A fully-forced decision carries no strategic choice — its value is
-    determined entirely by its successors. No CVPN forward, no regret tables,
-    no training tuple (self-play.md §2.2). Value is returned as 0.0 because
-    SelfPlay never calls search() on forced decisions; callers that need a
-    value (e.g. evaluation) should skip forced states or evaluate separately.
-
-    Returns a SearchResult with deterministic strategy, or None if any side
-    has more than one legal action (meaning real search is needed).
-    """
-    sides = view.to_move
-    forced_actions: dict[str, int] = {}
-
-    for s in sides:
-        mask = legal_mask(view.legal.get(s), view.phase)
-        legal_count = int(mask.sum())
-        if legal_count == 1:
-            forced_actions[s] = int(np.argmax(mask))
-        else:
-            assert legal_count > 0, f"Side {s} in to_move has 0 legal actions"
-            return None
-
-    strategy: dict[str, dict[int, float]] = {}
-    policy_target: dict[str, np.ndarray] = {}
-    for s in sides:
-        action_idx = forced_actions[s]
-        strategy[s] = {action_idx: 1.0}
-        pt = np.zeros(A, dtype=np.float32)
-        pt[action_idx] = 1.0
-        policy_target[s] = pt
-
-    # No CVPN call — forced decisions have no strategic content (self-play.md §2.2, §11)
-    return SearchResult(
-        strategy=strategy,
-        value=0.0,
-        policy_target=policy_target,
-    )
 
 
 def search(
@@ -97,9 +52,13 @@ def search(
     if config is None:
         config = SearchConfig()
 
-    skip = _single_move_result(view)
-    if skip is not None:
-        return skip
+    # Callers must filter forced decisions before invoking search() — forced
+    # roots have no strategic content and no meaningful value to return.
+    if forced_actions(view.legal, view.to_move, view.phase) is not None:
+        raise ValueError(
+            "search() called on a forced decision (every acting side has exactly "
+            "one legal action). Callers must skip forced states before invoking search()."
+        )
 
     sides = view.to_move
 

@@ -37,7 +37,6 @@ from search.expansion import (
     _collapse_forced,
     _expand_chance_child,
     _expand_child_turn_node,
-    _forced_view_choices,
     _generate_seed,
     _terminal_utility_p1,
     cvpn_value,
@@ -96,7 +95,8 @@ class TestExpandTurnNode:
         mock_sim, mock_net, mock_obs = self._setup_mocks(mock_view, n_legal=2, terminal_results=True)
 
         with patch("search.expansion.encode", return_value=mock_obs), \
-             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()), \
+             patch("search.expansion.forced_actions", return_value=None):
             expand_turn_node(node, mock_sim, mock_net, config)
 
         assert node.expanded is True
@@ -119,7 +119,8 @@ class TestExpandTurnNode:
         mock_net.return_value = (torch.zeros(1, as_mod.A), torch.tensor([0.5]))
 
         with patch("search.expansion.encode", return_value=mock_obs), \
-             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()), \
+             patch("search.expansion.forced_actions", return_value=None):
             expand_turn_node(node, mock_sim, mock_net, config)
 
         assert node.expanded is True
@@ -187,7 +188,8 @@ class TestExpandTurnNode:
         mock_sim.step.side_effect = _step_side_effect
 
         with patch("search.expansion.encode", return_value=mock_obs), \
-             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()), \
+             patch("search.expansion.forced_actions", return_value=None):
             expand_turn_node(node, mock_sim, mock_net, config)
 
         assert node.expanded is True
@@ -386,7 +388,8 @@ class TestExpandChanceChild:
         mock_net = MagicMock()
 
         with patch("search.expansion.action_to_choice_contextual", return_value="move 1"), \
-             patch("search.expansion.cvpn_value", return_value=0.33):
+             patch("search.expansion.cvpn_value", return_value=0.33), \
+             patch("search.expansion.forced_actions", return_value=None):
             _expand_chance_child(node, (0, 0), mock_sim, mock_net, config)
 
         assert len(node.grid[(0, 0)].children) == 1
@@ -441,7 +444,8 @@ class TestExpandChildTurnNode:
 
         config = SearchConfig(k_actions=2, max_chance_children=1)
         with patch("search.expansion.encode", return_value=mock_obs), \
-             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()), \
+             patch("search.expansion.forced_actions", return_value=None):
             result = _expand_child_turn_node(outcome, mock_sim, mock_net, config)
 
         assert result is not None
@@ -616,7 +620,8 @@ class TestTreeDeepening:
         mock_obs = _mock_obs_with_mask(2)
 
         with patch("search.expansion.encode", return_value=mock_obs), \
-             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()), \
+             patch("search.expansion.forced_actions", return_value=None):
             result = puct_expand_one(node, mock_sim, mock_net, config=config)
 
         assert result is True
@@ -659,7 +664,8 @@ class TestTreeDeepening:
         mock_obs = _mock_obs_with_mask(2)
 
         with patch("search.expansion.encode", return_value=mock_obs), \
-             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()), \
+             patch("search.expansion.forced_actions", return_value=None):
             result = puct_expand_one(root, mock_sim, mock_net, config=config)
 
         assert result is True
@@ -784,7 +790,8 @@ class TestPUCTExpandOneBoundary:
         mock_net.return_value = (torch.zeros(2, as_mod.A), torch.tensor([0.5, 0.5]))
 
         with patch("search.expansion.encode", return_value=mock_obs), \
-             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()):
+             patch("search.expansion.collate_obs_bundles", return_value=MagicMock()), \
+             patch("search.expansion.forced_actions", return_value=None):
             result = puct_expand_one(root, mock_sim, mock_net, config=config)
 
         assert result is True, "Should have expanded the second (non-terminal) outcome"
@@ -906,99 +913,8 @@ class TestSparseGrid:
 
 
 # ---------------------------------------------------------------------------
-# _forced_view_choices (forced-node collapse)
-# ---------------------------------------------------------------------------
-
-
-class TestForcedViewChoices:
-    """Test the forced-decision detection helper."""
-
-    def test_terminal_returns_none(self):
-        """Terminal view is never forced."""
-        view = MagicMock()
-        view.terminal = True
-        assert _forced_view_choices(view) is None
-
-    def test_empty_to_move_returns_none(self):
-        """No acting sides means not forced."""
-        view = MagicMock()
-        view.terminal = False
-        view.to_move = []
-        assert _forced_view_choices(view) is None
-
-    def test_non_list_to_move_returns_none(self):
-        """Non-list to_move (e.g. unconfigured MagicMock) returns None safely."""
-        view = MagicMock()
-        view.terminal = False
-        # to_move is a MagicMock (not a list) — should not crash
-        assert _forced_view_choices(view) is None
-
-    def test_single_legal_action_both_sides(self):
-        """Both sides have exactly one legal action -> returns forced choices."""
-        view = MagicMock()
-        view.terminal = False
-        view.phase = "forceSwitch"
-        view.to_move = ["p1", "p2"]
-        view.legal = {
-            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
-                {"condition": "0 fnt"}, {"condition": "0 fnt"},
-                {"condition": "100/100"}, {"condition": "0 fnt"},
-            ]}},
-            "p2": {"forceSwitch": [True, False], "side": {"pokemon": [
-                {"condition": "0 fnt"}, {"condition": "0 fnt"},
-                {"condition": "0 fnt"}, {"condition": "120/120"},
-            ]}},
-        }
-
-        result = _forced_view_choices(view)
-        assert result is not None
-        assert "p1" in result
-        assert "p2" in result
-
-    def test_multi_legal_action_returns_none(self):
-        """One side has multiple legal actions -> not forced."""
-        view = MagicMock()
-        view.terminal = False
-        view.phase = "move"
-        view.to_move = ["p1", "p2"]
-        view.legal = {
-            "p1": {"active": [
-                {"moves": [{"id": "thunderbolt", "pp": 10, "target": "normal"}, {"id": "protect", "pp": 10, "target": "self"}]},
-                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
-            ], "side": {"pokemon": [
-                {"condition": "100/100"}, {"condition": "100/100"},
-                {"condition": "100/100"}, {"condition": "100/100"},
-            ]}},
-            "p2": {"active": [
-                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
-                {"moves": [{"id": "protect", "pp": 10, "target": "self"}]},
-            ], "side": {"pokemon": [
-                {"condition": "100/100"}, {"condition": "100/100"},
-                {"condition": "100/100"}, {"condition": "100/100"},
-            ]}},
-        }
-        assert _forced_view_choices(view) is None
-
-    def test_unilateral_single_action(self):
-        """Only one side acting with one legal action -> forced."""
-        view = MagicMock()
-        view.terminal = False
-        view.phase = "forceSwitch"
-        view.to_move = ["p1"]
-        view.legal = {
-            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
-                {"condition": "0 fnt"}, {"condition": "0 fnt"},
-                {"condition": "100/100"}, {"condition": "0 fnt"},
-            ]}},
-        }
-
-        result = _forced_view_choices(view)
-        assert result is not None
-        assert "p1" in result
-
-
-# ---------------------------------------------------------------------------
 # _collapse_forced (forced-node collapse)
+# Forced-decision predicate (forced_actions) is tested in test_self_play.py.
 # ---------------------------------------------------------------------------
 
 
@@ -1136,13 +1052,3 @@ class TestCollapseForced:
         assert result_handle == 42
         assert result_view is forced_view
 
-    def test_mock_view_passthrough(self):
-        """Unconfigured MagicMock view (non-list to_move) passes through safely."""
-        bare_mock = MagicMock(terminal=False)
-        mock_sim = MagicMock()
-
-        result_handle, result_view = _collapse_forced(mock_sim, 42, bare_mock)
-
-        assert result_handle == 42
-        assert result_view is bare_mock
-        mock_sim.step.assert_not_called()

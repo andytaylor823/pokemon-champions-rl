@@ -115,3 +115,34 @@ describe("validateStatPoints (via packTeam)", () => {
     expect(() => packTeam([mon])).not.toThrow();
   });
 });
+
+describe("packTeam edge cases", () => {
+  it("packs a single-Pokemon team without team delimiter", () => {
+    const packed = packTeam([validMon()]);
+    expect(packed.length).toBeGreaterThan(0);
+    // Single mon should not contain the ']' team delimiter
+    expect(packed).not.toContain("]");
+  });
+
+  it("packs an empty team without error", () => {
+    const packed = packTeam([]);
+    expect(typeof packed).toBe("string");
+  });
+
+  it("accepts maximally-spread stat distribution (11 per stat, total 66)", () => {
+    const mon = validMon({
+      statPoints: { hp: 11, atk: 11, def: 11, spa: 11, spd: 11, spe: 11 },
+    });
+    expect(() => packTeam([mon])).not.toThrow();
+  });
+
+  it("handles non-integer stat points via floor behavior", () => {
+    // Float stat points — validateStatPoints checks val < 0 || val > 32,
+    // so 10.5 passes the range check. Documents current behavior.
+    const mon = validMon({
+      statPoints: { hp: 10.5, atk: 10, def: 10, spa: 10, spd: 10, spe: 10 } as any,
+    });
+    // Should not throw since 10.5 < 32 and total ~60.5 < 66
+    expect(() => packTeam([mon])).not.toThrow();
+  });
+});

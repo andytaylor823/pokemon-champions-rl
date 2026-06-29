@@ -14,14 +14,19 @@ from action_space import (
     MoveAction,
     PassAction,
     SwitchAction,
+    _NO_TARGET_TYPES,
     _TARGET_TYPE_MAP,
+    _canonical_to_showdown_target,
     _choice_to_slot_action,
     _index_to_slot_action,
+    _is_charging,
     _legal_switches,
+    _showdown_to_canonical_target,
     _slot_action_to_index,
+    _slot_choice_contextual,
     _valid_targets_for,
+    action_to_choice_contextual,
     choice_string_to_index,
-    index_to_choice_string,
     legal_mask,
 )
 
@@ -133,13 +138,13 @@ class TestChoiceStringRoundTrips:
     """Test index ↔ choice string conversions."""
 
     def test_team_preview_first(self):
-        choice = index_to_choice_string(0)
+        choice = action_to_choice_contextual(0, None)
         assert choice.startswith("team ")
         assert choice_string_to_index(choice) == 0
 
     def test_team_preview_last(self):
         last_idx = TEAM_PREVIEW_COUNT - 1
-        choice = index_to_choice_string(last_idx)
+        choice = action_to_choice_contextual(last_idx, None)
         assert choice.startswith("team ")
         assert choice_string_to_index(choice) == last_idx
 
@@ -147,12 +152,12 @@ class TestChoiceStringRoundTrips:
         # "team 1234" corresponds to permutation (1,2,3,4) which is index 0
         # in lexicographic order of permutations(range(1,7), 4)
         idx = choice_string_to_index("team 1234")
-        assert index_to_choice_string(idx) == "team 1234"
+        assert action_to_choice_contextual(idx, None) == "team 1234"
 
     def test_team_preview_roundtrip_sample(self):
         # Test a spread of indices across team preview range
         for i in range(0, TEAM_PREVIEW_COUNT, 30):
-            choice = index_to_choice_string(i)
+            choice = action_to_choice_contextual(i, None)
             assert choice_string_to_index(choice) == i
 
     def test_move_phase_basic_move(self):
@@ -160,7 +165,7 @@ class TestChoiceStringRoundTrips:
         slot1_idx = _slot_action_to_index(0, 1, False, None)
         slot2_idx = _slot_action_to_index(0, 1, False, None)
         idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
-        choice = index_to_choice_string(idx)
+        choice = action_to_choice_contextual(idx, None)
         assert "move 1 1" in choice
         assert choice_string_to_index(choice) == idx
 
@@ -169,7 +174,7 @@ class TestChoiceStringRoundTrips:
         slot1_idx = _slot_action_to_index(0, 1, True, None)  # 12
         slot2_idx = _slot_action_to_index(None, None, False, 1)  # 24
         joint_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
-        choice = index_to_choice_string(joint_idx)
+        choice = action_to_choice_contextual(joint_idx, None)
         assert "mega" in choice
         assert "switch 3" in choice
         assert choice_string_to_index(choice) == joint_idx
@@ -179,7 +184,7 @@ class TestChoiceStringRoundTrips:
         slot1_idx = _slot_action_to_index(None, None, False, 1)  # switch to team slot 3
         slot2_idx = _slot_action_to_index(None, None, False, 2)  # switch to team slot 4
         joint_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
-        choice = index_to_choice_string(joint_idx)
+        choice = action_to_choice_contextual(joint_idx, None)
         assert "switch 3" in choice
         assert "switch 4" in choice
         assert choice_string_to_index(choice) == joint_idx
@@ -188,7 +193,7 @@ class TestChoiceStringRoundTrips:
         # Slot1 is a move, slot2 is pass (single-mon endgame)
         slot1_idx = _slot_action_to_index(0, 1, False, None)
         joint_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + PASS_INDEX
-        choice = index_to_choice_string(joint_idx)
+        choice = action_to_choice_contextual(joint_idx, None)
         # Pass is omitted — only slot1's choice appears
         assert choice == "move 1 1"
         assert choice_string_to_index(choice) == joint_idx
@@ -196,7 +201,7 @@ class TestChoiceStringRoundTrips:
     def test_move_phase_roundtrip_sample(self):
         # Sample move-phase indices at regular intervals
         for i in range(MOVE_PHASE_OFFSET, A, 50):
-            choice = index_to_choice_string(i)
+            choice = action_to_choice_contextual(i, None)
             assert choice_string_to_index(choice) == i
 
 
@@ -599,7 +604,7 @@ class TestShowdownFormatParsing:
     def test_joint_with_targetless_slot(self):
         """'move 2, switch 3' — targetless move in slot1, switch in slot2."""
         idx = choice_string_to_index("move 2, switch 3")
-        choice = index_to_choice_string(idx)
+        choice = action_to_choice_contextual(idx, None)
         assert "switch 3" in choice
 
     @pytest.mark.parametrize("fragment,expected_move,expected_target,expected_mega", [
@@ -787,6 +792,197 @@ class TestBenchStates:
 # ---------------------------------------------------------------------------
 
 
+class TestFaintedActiveSlotPass:
+    """Active slot with a fainted Pokemon (no bench replacement) becomes PASS."""
+
+    def test_fainted_slot1_becomes_pass(self):
+        """When slot 1 Pokemon is fainted (no bench to replace), only slot 0 acts."""
+        request = {
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 5, "target": "normal"}]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},  # active slot 0 — alive
+                {"condition": "0 fnt"},    # active slot 1 — fainted, no replacement
+                {"condition": "0 fnt"},    # bench 1 fainted
+                {"condition": "0 fnt"},    # bench 2 fainted
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Only joint actions with slot 1 = PASS should be legal
+        slot0_move = _slot_action_to_index(0, 1, False, None)
+        with_pass = MOVE_PHASE_OFFSET + slot0_move * ACTIONS_PER_SLOT + PASS_INDEX
+        assert mask[with_pass], "slot0 move + slot1 pass should be legal"
+        # No joint action should have a non-pass slot 1
+        for s2 in range(ACTIONS_PER_SLOT):
+            if s2 == PASS_INDEX:
+                continue
+            assert not mask[MOVE_PHASE_OFFSET + slot0_move * ACTIONS_PER_SLOT + s2]
+
+    def test_fainted_slot0_becomes_pass(self):
+        """When slot 0 Pokemon is fainted (no bench to replace), only slot 1 acts."""
+        request = {
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 5, "target": "normal"}]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "0 fnt"},    # active slot 0 — fainted
+                {"condition": "180/180"},  # active slot 1 — alive
+                {"condition": "0 fnt"},    # bench 1 fainted
+                {"condition": "0 fnt"},    # bench 2 fainted
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Only joint actions with slot 0 = PASS should be legal
+        slot1_move = _slot_action_to_index(0, 1, False, None)
+        with_pass = MOVE_PHASE_OFFSET + PASS_INDEX * ACTIONS_PER_SLOT + slot1_move
+        assert mask[with_pass], "slot0 pass + slot1 move should be legal"
+
+
+class TestForceSwithNoBench:
+    """ForceSwitch with no available bench Pokemon should produce PASS."""
+
+    def test_force_switch_no_bench_becomes_pass(self):
+        """When forceSwitch=True but all bench are fainted, slot returns PASS."""
+        request = {
+            "forceSwitch": [True, False],
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 5, "target": "normal"}]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "0 fnt"},    # active slot 0 — fainted
+                {"condition": "180/180"},  # active slot 1 — alive
+                {"condition": "0 fnt"},    # bench 1 — fainted
+                {"condition": "0 fnt"},    # bench 2 — fainted
+            ]},
+        }
+        mask = legal_mask(request, "forceSwitch")
+        # Slot 0 should be PASS (no bench to switch to), slot 1 has moves
+        assert mask[MOVE_PHASE_OFFSET:].any(), "Should have at least one legal joint action"
+        # The legal joint should include PASS in slot 0
+        for s1 in range(ACTIONS_PER_SLOT):
+            for s2 in range(ACTIONS_PER_SLOT):
+                joint = MOVE_PHASE_OFFSET + s1 * ACTIONS_PER_SLOT + s2
+                if mask[joint]:
+                    assert s1 == PASS_INDEX, f"Slot 0 should be PASS, got slot action {s1}"
+
+    def test_both_force_switch_no_bench(self):
+        """When both slots need forceSwitch but all bench are fainted, both PASS."""
+        request = {
+            "forceSwitch": [True, True],
+            "side": {"pokemon": [
+                {"condition": "0 fnt"},  # active 0 fainted
+                {"condition": "0 fnt"},  # active 1 fainted
+                {"condition": "0 fnt"},  # bench 1 fainted
+                {"condition": "0 fnt"},  # bench 2 fainted
+            ]},
+        }
+        mask = legal_mask(request, "forceSwitch")
+        # Should have exactly one legal action: PASS x PASS
+        pass_pass = MOVE_PHASE_OFFSET + PASS_INDEX * ACTIONS_PER_SLOT + PASS_INDEX
+        assert mask[pass_pass], "PASS x PASS should be legal"
+        assert mask.sum() == 1, "Only PASS x PASS should be legal"
+
+
+class TestPerSlotTrapped:
+    """Per-slot trapping (e.g. charging Solar Beam) excludes switches for that slot."""
+
+    def test_per_slot_trapped_excludes_switches(self):
+        """A slot with trapped=True should have no switch actions, even without top-level trapped."""
+        request = {
+            "active": [
+                {
+                    "moves": [{"move": "Solar Beam", "id": "solarbeam"}],
+                    "trapped": True,
+                },
+                {
+                    "moves": [
+                        {"id": "protect", "pp": 5, "target": "self"},
+                        {"id": "heatwave", "pp": 5, "target": "allAdjacentFoes"},
+                    ],
+                },
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Slot 0 is trapped — should have no switches
+        sw1 = _slot_action_to_index(None, None, False, 1)
+        sw2 = _slot_action_to_index(None, None, False, 2)
+        for s2 in range(ACTIONS_PER_SLOT):
+            assert not mask[MOVE_PHASE_OFFSET + sw1 * ACTIONS_PER_SLOT + s2], "Trapped slot should not switch"
+            assert not mask[MOVE_PHASE_OFFSET + sw2 * ACTIONS_PER_SLOT + s2], "Trapped slot should not switch"
+        # Slot 0 should still have at least one legal move (the charging move)
+        assert mask[MOVE_PHASE_OFFSET:].any(), "Charging move should be legal"
+
+
+class TestChargingMoves:
+    """Charging moves (no pp/target fields) are detected and handled."""
+
+    def test_charging_move_is_legal(self):
+        """A charging move entry with no pp/target should still be marked legal."""
+        request = {
+            "active": [
+                {
+                    "moves": [{"move": "Solar Beam", "id": "solarbeam"}],
+                    "trapped": True,
+                },
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Charging move gets canonical target=1, move_idx=0
+        charging_idx = _slot_action_to_index(0, 1, False, None)
+        # Should appear in at least one joint action
+        any_charging = any(
+            mask[MOVE_PHASE_OFFSET + charging_idx * ACTIONS_PER_SLOT + s2]
+            for s2 in range(ACTIONS_PER_SLOT)
+        )
+        assert any_charging, "Charging move should be legal"
+
+    def test_charging_move_single_target_only(self):
+        """Charging move should only get one target variant, not three."""
+        request = {
+            "active": [
+                {
+                    "moves": [{"move": "Solar Beam", "id": "solarbeam"}],
+                    "trapped": True,
+                },
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+            "side": {"pokemon": [
+                {"condition": "200/200"},
+                {"condition": "180/180"},
+                {"condition": "150/150"},
+                {"condition": "100/100"},
+            ]},
+        }
+        mask = legal_mask(request, "move")
+        # Only target=1 (canonical) should be legal for the charging move
+        charging_t1 = _slot_action_to_index(0, 1, False, None)
+        charging_t2 = _slot_action_to_index(0, 2, False, None)
+        charging_tally = _slot_action_to_index(0, -1, False, None)
+        any_t1 = any(mask[MOVE_PHASE_OFFSET + charging_t1 * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+        any_t2 = any(mask[MOVE_PHASE_OFFSET + charging_t2 * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+        any_ally = any(mask[MOVE_PHASE_OFFSET + charging_tally * ACTIONS_PER_SLOT + s2] for s2 in range(ACTIONS_PER_SLOT))
+        assert any_t1, "Charging move canonical target should be legal"
+        assert not any_t2, "Charging move should not have multiple targets"
+        assert not any_ally, "Charging move should not have ally target"
+
+
 class TestTargetTypeMapExhaustive:
     """_TARGET_TYPE_MAP covers all known Showdown target types."""
 
@@ -916,3 +1112,353 @@ class TestNewTargetTypesInMask:
 
         assert any_t1, "foeSide should allow canonical target 1"
         assert not any_t2, "foeSide should not allow target 2"
+
+
+# ---------------------------------------------------------------------------
+# Gap 2: _canonical_to_showdown_target / _showdown_to_canonical_target
+# ---------------------------------------------------------------------------
+
+
+class TestAllyTargetTranslation:
+    """Direct tests for slot-specific ally target translation functions."""
+
+    def test_canonical_ally_from_slot0_emits_minus2(self):
+        """Slot 0 targeting ally (canonical -1) should emit Showdown target -2."""
+        assert _canonical_to_showdown_target(-1, slot_pos=0) == -2
+
+    def test_canonical_ally_from_slot1_emits_minus1(self):
+        """Slot 1 targeting ally (canonical -1) should emit Showdown target -1."""
+        assert _canonical_to_showdown_target(-1, slot_pos=1) == -1
+
+    def test_foe_targets_unchanged_by_slot(self):
+        """Foe targets (1, 2) are identical regardless of slot position."""
+        for slot_pos in (0, 1):
+            assert _canonical_to_showdown_target(1, slot_pos) == 1
+            assert _canonical_to_showdown_target(2, slot_pos) == 2
+
+    def test_showdown_minus2_from_slot0_is_canonical_ally(self):
+        """Showdown target -2 from slot 0 maps back to canonical -1."""
+        assert _showdown_to_canonical_target(-2, slot_pos=0) == -1
+
+    def test_showdown_minus1_from_slot1_is_canonical_ally(self):
+        """Showdown target -1 from slot 1 maps back to canonical -1."""
+        assert _showdown_to_canonical_target(-1, slot_pos=1) == -1
+
+    def test_showdown_minus1_from_slot0_is_NOT_ally(self):
+        """Showdown target -1 from slot 0 is NOT the ally mapping — passes through."""
+        assert _showdown_to_canonical_target(-1, slot_pos=0) == -1
+
+    def test_roundtrip_slot0_ally(self):
+        """canonical -1 -> showdown -2 -> canonical -1 for slot 0."""
+        showdown = _canonical_to_showdown_target(-1, slot_pos=0)
+        assert showdown == -2
+        canonical = _showdown_to_canonical_target(showdown, slot_pos=0)
+        assert canonical == -1
+
+    def test_roundtrip_slot1_ally(self):
+        """canonical -1 -> showdown -1 -> canonical -1 for slot 1."""
+        showdown = _canonical_to_showdown_target(-1, slot_pos=1)
+        assert showdown == -1
+        canonical = _showdown_to_canonical_target(showdown, slot_pos=1)
+        assert canonical == -1
+
+
+# ---------------------------------------------------------------------------
+# Gap 3: _slot_choice_contextual branches
+# ---------------------------------------------------------------------------
+
+
+class TestSlotChoiceContextual:
+    """Direct tests for all 5 branches of _slot_choice_contextual."""
+
+    def test_pass_action_returns_empty(self):
+        """PassAction emits empty string."""
+        assert _slot_choice_contextual(PassAction(), slot_moves=None, slot_pos=0) == ""
+
+    def test_switch_action_returns_switch_string(self):
+        """SwitchAction emits 'switch N' with the team slot."""
+        action = SwitchAction(bench_pos=1, team_slot=3)
+        assert _slot_choice_contextual(action, slot_moves=None, slot_pos=0) == "switch 3"
+
+    def test_charging_move_strips_target(self):
+        """A charging move (no pp key) should emit 'move N' without target."""
+        action = MoveAction(move_idx=0, target=1, mega=False)
+        slot_moves = [{"move": "Solar Beam", "id": "solarbeam"}]
+        result = _slot_choice_contextual(action, slot_moves, slot_pos=0)
+        assert result == "move 1"
+        assert "-" not in result
+
+    def test_charging_move_with_mega(self):
+        """Charging move + mega emits 'move N mega' without target."""
+        action = MoveAction(move_idx=1, target=2, mega=True)
+        slot_moves = [
+            {"id": "protect", "pp": 5, "target": "self"},
+            {"move": "Solar Beam", "id": "solarbeam"},
+        ]
+        result = _slot_choice_contextual(action, slot_moves, slot_pos=0)
+        assert result == "move 2 mega"
+
+    @pytest.mark.parametrize("target_type", sorted(_NO_TARGET_TYPES))
+    def test_no_target_type_strips_target(self, target_type):
+        """Moves whose target type is in _NO_TARGET_TYPES emit 'move N' without target."""
+        action = MoveAction(move_idx=0, target=1, mega=False)
+        slot_moves = [{"id": "heatwave", "pp": 5, "target": target_type}]
+        result = _slot_choice_contextual(action, slot_moves, slot_pos=0)
+        assert result == "move 1"
+
+    def test_normal_target_emits_foe_target(self):
+        """A normal-target move emits 'move N T' with the Showdown target."""
+        action = MoveAction(move_idx=0, target=2, mega=False)
+        slot_moves = [{"id": "thunderbolt", "pp": 10, "target": "normal"}]
+        result = _slot_choice_contextual(action, slot_moves, slot_pos=0)
+        assert result == "move 1 2"
+
+    def test_normal_target_ally_from_slot0(self):
+        """Slot 0 targeting ally emits 'move N -2' (Showdown convention)."""
+        action = MoveAction(move_idx=0, target=-1, mega=False)
+        slot_moves = [{"id": "helpinghand", "pp": 10, "target": "normal"}]
+        result = _slot_choice_contextual(action, slot_moves, slot_pos=0)
+        assert result == "move 1 -2"
+
+    def test_normal_target_ally_from_slot1(self):
+        """Slot 1 targeting ally emits 'move N -1' (Showdown convention)."""
+        action = MoveAction(move_idx=0, target=-1, mega=False)
+        slot_moves = [{"id": "helpinghand", "pp": 10, "target": "normal"}]
+        result = _slot_choice_contextual(action, slot_moves, slot_pos=1)
+        assert result == "move 1 -1"
+
+    def test_no_slot_moves_always_emits_target(self):
+        """When slot_moves is None, target is always emitted (context-free mode)."""
+        action = MoveAction(move_idx=0, target=1, mega=False)
+        result = _slot_choice_contextual(action, slot_moves=None, slot_pos=0)
+        assert result == "move 1 1"
+
+    def test_adjacentfoe_emits_target(self):
+        """adjacentFoe is NOT in _NO_TARGET_TYPES — target should be emitted."""
+        action = MoveAction(move_idx=0, target=2, mega=False)
+        slot_moves = [{"id": "thunderbolt", "pp": 10, "target": "adjacentFoe"}]
+        result = _slot_choice_contextual(action, slot_moves, slot_pos=0)
+        assert result == "move 1 2"
+
+
+# ---------------------------------------------------------------------------
+# Gap 1: action_to_choice_contextual with real legal_request dicts
+# ---------------------------------------------------------------------------
+
+
+class TestContextualChoiceWithRequest:
+    """Test action_to_choice_contextual with real legal_request dicts
+    to exercise target stripping and slot-specific ally targeting."""
+
+    def test_spread_move_strips_target(self):
+        """A spread move (allAdjacentFoes) should not emit a target in the choice string."""
+        request = {
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 5, "target": "allAdjacentFoes"}]},
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+        }
+        slot1_idx = _slot_action_to_index(0, 1, False, None)
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, request)
+        # Slot 0's Heat Wave (spread) should NOT have a target number
+        # Slot 1's Protect (self) should NOT have a target number
+        parts = choice.split(", ")
+        assert parts[0] == "move 1", f"Spread move should be 'move 1', got '{parts[0]}'"
+        assert parts[1] == "move 1", f"Self move should be 'move 1', got '{parts[1]}'"
+
+    def test_self_move_strips_target(self):
+        """A self-targeting move (Protect) should not emit a target."""
+        request = {
+            "active": [
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+                {"moves": [{"id": "earthquake", "pp": 5, "target": "allAdjacentFoes"}]},
+            ],
+        }
+        slot1_idx = _slot_action_to_index(0, 1, False, None)
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, request)
+        parts = choice.split(", ")
+        assert parts[0] == "move 1", f"Self move should be 'move 1', got '{parts[0]}'"
+
+    def test_charging_move_strips_target(self):
+        """A charging move (no pp key) should not emit a target."""
+        request = {
+            "active": [
+                {"moves": [{"move": "Solar Beam", "id": "solarbeam"}]},
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+        }
+        slot1_idx = _slot_action_to_index(0, 1, False, None)
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, request)
+        parts = choice.split(", ")
+        assert parts[0] == "move 1", f"Charging move should be 'move 1', got '{parts[0]}'"
+
+    def test_ally_target_slot0_emits_minus2(self):
+        """Slot 0 targeting ally with a normal move should emit target -2."""
+        request = {
+            "active": [
+                {"moves": [{"id": "helpinghand", "pp": 10, "target": "normal"}]},
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+        }
+        # Slot 0: move 1 targeting ally (canonical -1)
+        slot1_idx = _slot_action_to_index(0, -1, False, None)
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, request)
+        parts = choice.split(", ")
+        assert parts[0] == "move 1 -2", f"Slot 0 ally should emit -2, got '{parts[0]}'"
+
+    def test_ally_target_slot1_emits_minus1(self):
+        """Slot 1 targeting ally with a normal move should emit target -1."""
+        request = {
+            "active": [
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+                {"moves": [{"id": "helpinghand", "pp": 10, "target": "normal"}]},
+            ],
+        }
+        # Slot 1: move 1 targeting ally (canonical -1)
+        slot1_idx = _slot_action_to_index(0, 1, False, None)
+        slot2_idx = _slot_action_to_index(0, -1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, request)
+        parts = choice.split(", ")
+        assert parts[1] == "move 1 -1", f"Slot 1 ally should emit -1, got '{parts[1]}'"
+
+    def test_foe_target_unchanged_with_request(self):
+        """Foe targets (1, 2) should be emitted unchanged with a real request."""
+        request = {
+            "active": [
+                {"moves": [{"id": "thunderbolt", "pp": 10, "target": "normal"}]},
+                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
+            ],
+        }
+        slot1_idx = _slot_action_to_index(0, 2, False, None)
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, request)
+        parts = choice.split(", ")
+        assert parts[0] == "move 1 2", f"Foe target should be '2', got '{parts[0]}'"
+        assert parts[1] == "move 1 1", f"Foe target should be '1', got '{parts[1]}'"
+
+    def test_mega_with_spread_strips_target(self):
+        """Mega + spread move should emit 'move N mega' without target."""
+        request = {
+            "active": [
+                {"moves": [{"id": "heatwave", "pp": 5, "target": "allAdjacentFoes"}], "canMegaEvo": True},
+                {"moves": [{"id": "protect", "pp": 5, "target": "self"}]},
+            ],
+        }
+        slot1_idx = _slot_action_to_index(0, 1, True, None)
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, request)
+        parts = choice.split(", ")
+        assert parts[0] == "move 1 mega", f"Mega spread should be 'move 1 mega', got '{parts[0]}'"
+
+
+# ---------------------------------------------------------------------------
+# Gap 11: _is_charging predicate
+# ---------------------------------------------------------------------------
+
+
+class TestIsChargingPredicate:
+    """Direct tests for the _is_charging move detection helper."""
+
+    def test_normal_move_with_pp_is_not_charging(self):
+        assert _is_charging({"id": "heatwave", "pp": 5, "target": "allAdjacentFoes"}) is False
+
+    def test_zero_pp_is_not_charging(self):
+        """pp=0 still has the key, so it's not a charging move."""
+        assert _is_charging({"id": "heatwave", "pp": 0, "target": "normal"}) is False
+
+    def test_no_pp_key_is_charging(self):
+        assert _is_charging({"move": "Solar Beam", "id": "solarbeam"}) is True
+
+    def test_minimal_dict_without_pp_is_charging(self):
+        assert _is_charging({"id": "solarbeam"}) is True
+
+    def test_empty_dict_is_charging(self):
+        assert _is_charging({}) is True
+
+
+# ---------------------------------------------------------------------------
+# Gap 12: choice_string_to_index with ally targets (slot-aware roundtrip)
+# ---------------------------------------------------------------------------
+
+
+class TestAllyTargetRoundtrip:
+    """Roundtrip tests verifying slot-specific ally targets survive encode/decode."""
+
+    def test_slot0_ally_minus2_parses_to_canonical(self):
+        """'move 1 -2, move 1 1' — slot 0 targeting ally via -2 -> canonical -1."""
+        idx = choice_string_to_index("move 1 -2, move 1 1")
+        joint_idx = idx - MOVE_PHASE_OFFSET
+        slot1_idx = joint_idx // ACTIONS_PER_SLOT
+        action = _index_to_slot_action(slot1_idx)
+        assert isinstance(action, MoveAction)
+        assert action.target == -1, "Showdown -2 from slot 0 should map to canonical -1"
+
+    def test_slot1_ally_minus1_parses_to_canonical(self):
+        """'move 1 1, move 1 -1' — slot 1 targeting ally via -1 -> canonical -1."""
+        idx = choice_string_to_index("move 1 1, move 1 -1")
+        joint_idx = idx - MOVE_PHASE_OFFSET
+        slot2_idx = joint_idx % ACTIONS_PER_SLOT
+        action = _index_to_slot_action(slot2_idx)
+        assert isinstance(action, MoveAction)
+        assert action.target == -1, "Showdown -1 from slot 1 should map to canonical -1"
+
+    def test_full_roundtrip_ally_targets(self):
+        """Roundtrip: index -> contextual choice (with request) -> parse back."""
+        request = {
+            "active": [
+                {"moves": [{"id": "helpinghand", "pp": 10, "target": "normal"}]},
+                {"moves": [{"id": "healbell", "pp": 10, "target": "normal"}]},
+            ],
+        }
+        # Both slots target ally (canonical -1)
+        slot1_idx = _slot_action_to_index(0, -1, False, None)
+        slot2_idx = _slot_action_to_index(0, -1, False, None)
+        original_idx = MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
+
+        choice = action_to_choice_contextual(original_idx, request)
+        # Slot 0 ally -> -2, Slot 1 ally -> -1
+        assert "-2" in choice.split(", ")[0], "Slot 0 ally should emit -2"
+        assert "-1" in choice.split(", ")[1], "Slot 1 ally should emit -1"
+
+        parsed_idx = choice_string_to_index(choice)
+        assert parsed_idx == original_idx, "Roundtrip with ally targets should be lossless"
+
+
+# ---------------------------------------------------------------------------
+# Gap 13: action_to_choice_contextual slot0-pass emit
+# ---------------------------------------------------------------------------
+
+
+class TestSlot0PassEmit:
+    """When slot 0 is pass and slot 1 has an action, emit 'pass, <slot1_choice>'."""
+
+    def test_slot0_pass_slot1_move(self):
+        """pass x move should emit 'pass, move N T'."""
+        slot2_idx = _slot_action_to_index(0, 1, False, None)
+        action_idx = MOVE_PHASE_OFFSET + PASS_INDEX * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, None)
+        assert choice == "pass, move 1 1"
+
+    def test_slot0_pass_slot1_switch(self):
+        """pass x switch should emit 'pass, switch N'."""
+        slot2_idx = _slot_action_to_index(None, None, False, 1)
+        action_idx = MOVE_PHASE_OFFSET + PASS_INDEX * ACTIONS_PER_SLOT + slot2_idx
+        choice = action_to_choice_contextual(action_idx, None)
+        assert choice == "pass, switch 3"
+
+    def test_both_pass_emits_pass(self):
+        """pass x pass should emit 'pass'."""
+        action_idx = MOVE_PHASE_OFFSET + PASS_INDEX * ACTIONS_PER_SLOT + PASS_INDEX
+        choice = action_to_choice_contextual(action_idx, None)
+        assert choice == "pass"

@@ -214,6 +214,47 @@
 - **Evidence level:** Standard AlphaZero/PoG approach. Deep CFR retrains from scratch because it needs the full history's cumulative regret; GT-CFR's CVPN predicts values/policies, not regrets, so continuous learning is appropriate.
 - **Impact: Low** — this follows directly from the GT-CFR algorithm choice and is well-justified.
 
+### 8.4 Value target = search-refined value (bootstrapping), tuples also tagged with result z
+- **Choice:** The CVPN value head trains toward the **search-refined value** at each decision (the GT-CFR/PoG bootstrapping target), **not** the final game outcome z. Each `TrainingTuple` is *also* tagged with the final result z, but z is a logged side-signal in Phase 1, not the training target. Decided in the SelfPlay grilling (`docs/plans/self-play.md` §4).
+- **Evidence level:** The search-value target is principled (`gt-cfr-theory.md` §11, `search.md` §7); the *also-tag-z* part is the vibes layer — it buys future optionality (a search-value/z blend or TD-λ target) and diagnostics at the cost of per-game buffering and delayed emission.
+- **Alternatives:** Search value only, stream tuples immediately, record z separately per game (simpler, no per-game buffer); final outcome z only (AlphaZero-style, abandons bootstrapping).
+- **REVISIT trigger:** If bootstrap value targets prove unstable or biased, experiment with blending in z (the tag is already there). If the per-game buffering is a throughput cost with no payoff, drop the z tag and stream.
+- **Impact: Med** — the value target is central to training dynamics; the bootstrapping choice is well-grounded, but the z-tag/blend question is genuinely open. Marked to revisit.
+
+### 8.5 Action selection: sample ∝ σ̄ with temperature τ (default 1.0)
+- **Choice:** In self-play, each side samples its played joint action proportionally to the average strategy σ̄, with a temperature knob τ (default 1.0 = sample exactly from σ̄). Greedy (τ→0) is reserved for Evaluation, not data generation (`self-play.md` §3).
+- **Evidence level:** Principled — σ̄ is the game-theoretically correct mixed strategy, so sampling from it both plays well and gives natural trajectory diversity. The temperature knob is conventional (AlphaZero lineage).
+- **Alternatives:** Temperature schedule (τ=1 early → greedy late); small ε-random legal-action injection for extra state coverage; always greedy.
+- **REVISIT trigger:** If self-play trajectories are too narrow (state coverage poor), add a schedule or ε-injection. Note this does **not** address top-k blindness (a search-internal concern; `search.md` §12.4).
+- **Impact: Low–Med** — a standard sampling knob; the right default (τ=1) is likely fine and all variants are tunable behind `SelfPlayConfig`.
+
+### 8.6 TrainingTuple stores the encoded ObsBundle + sparse σ̄
+- **Choice:** Each tuple stores the **encoded `ObsBundle`** (β) rather than the raw `StateView` (no lazy re-encode), and stores σ̄ **sparse** (≤k index→prob pairs, densified to `[A]` at batch time) (`self-play.md` §4).
+- **Evidence level:** Principled — pre-encoding makes tuples self-contained so ReplayBuffer/Trainer never touch the encoder; the "encoder churn invalidates the buffer" objection is moot because an encoder-schema change already forces a fresh net + fresh run, and the buffer is ephemeral/FIFO. Sparse σ̄ is lossless (mass lives on ≤k actions).
+- **Alternatives:** Store `StateView` + perspective and encode lazily in the Trainer's data path (lighter, survives encoder edits within a run, but per-batch CPU encode + Trainer/encoder coupling); store both (hybrid).
+- **REVISIT trigger:** If buffer memory becomes a constraint, switch β to lazy `StateView` storage; if frequent feature inspection is needed, go hybrid.
+- **Impact: Low** — a well-understood storage tradeoff; pre-encoding is the simple, fast default.
+
+### 8.7 Forced-decision full skip (no CVPN/CFR/tuple)
+- **Choice:** A **forced decision** (every acting side has exactly one legal action) is skipped completely — no `search()`, no CVPN forward, no regret tables, no training tuple. SelfPlay enforces this in the game loop now (`self-play.md` §2.2); the search tree should additionally **collapse** forced nodes in-tree (step through to the next genuine decision/chance/terminal) rather than instantiate degenerate decision nodes.
+- **Evidence level:** Principled — a forced decision carries no strategic choice and its value is fully determined by its successors, so a CVPN eval / regret table / tuple at a forced node is pure waste. The loop-level skip is trivial; the in-tree collapse is the real work.
+- **Alternatives (fallback only):** Keep degenerate nodes but skip their CVPN/CFR cost and never emit from them — explicitly noted as a code smell, acceptable only if the in-tree collapse is too invasive for the first build.
+- **REVISIT trigger:** None expected for the loop-level skip; the in-tree collapse is a `search.md` §8/§12 task.
+- **Impact: Low–Med** — correctness-neutral efficiency decision, but it ripples into already-built search code (`core.py`, `expansion.py`).
+
+### 8.8 Validation curriculum (staged fixed matchups); per-stage from-scratch primary + warm-start side experiment
+- **Choice:** Phase-1 correctness is proven via a deliberate curriculum of fixed, hand-crafted matchups of increasing complexity (Stage 0 = all-Fire vs all-Grass, 2 moves each; … up to two balanced teams), each a fixed `MatchupSource`. Per-stage: **from-scratch is the primary correctness proof**; **warm-start from the prior stage is a side experiment** measuring curriculum acceleration (`self-play.md` §6.2).
+- **Evidence level:** Methodology choice (intuition) — staged complexity with a humanly-verifiable "correct solution" (favored team wins far more often) is the cleanest way to validate the architecture incrementally. No empirical basis yet; it *is* the empirical plan.
+- **Alternatives:** Jump straight to full-complexity matchups; random/tournament-data team diversity; warm-start as primary.
+- **REVISIT trigger:** Stage 0 may need to be made simpler; later stages added empirically; the success threshold ("far more often") to be operationalized in Evaluation.
+- **Impact: Med** — this is the spine of how Phase-1 feasibility is demonstrated; the success metric lives in Evaluation and the per-stage runs in Trainer.
+
+### 8.9 Single-process default + defensive `max_decisions` cap
+- **Choice:** SelfPlay's first build is single-process, sequential games (parallelism deferred, vibes 11.3). A defensive `max_decisions` cap (generous, e.g. 500) guards against non-terminating games; on exceeding it, the game is aborted and its buffered tuples **discarded** (never fabricate an outcome z) (`self-play.md` §2.4, §9).
+- **Evidence level:** Pragmatic — the engine terminates games on its own (no max-turn field is surfaced), so the cap is purely a safety net; discard-on-exceed avoids poisoning training with a fake result.
+- **REVISIT trigger:** If the cap ever fires in normal play, raise it / investigate; revisit parallelism when self-play throughput is the measured bottleneck.
+- **Impact: Low** — a safety net + a deferred scaling decision; neither affects correctness.
+
 ---
 
 ## 9. Search & Algorithm Choices (not yet built — decisions from plans)
@@ -325,6 +366,6 @@
 | Impact | Count | Key items |
 |--------|-------|-----------|
 | **High** | 4 | Transformer as backbone (1.1), top-k action abstraction (9.7), conditional belief sampler design (10.1), per-slot vs joint candidates (10.2) |
-| **Med** | 16 | d_model (1.2), n_layers (1.3), move attention pool (3.1), no derived features (5.5), flat joint action space (6.1), replay buffer strategy (8.1), loss weights (8.2), GT-CFR-direct for Phase 1 (9.1), expansion budget (9.2), chance bucketing (9.3), MCCFR samples (9.4), top-K candidates (9.5), simultaneous turn-node (9.6), chance fan-out K=5 (9.8), full multi-turn growth (9.9), inner-loop budgets (9.10) |
+| **Med** | 19 | d_model (1.2), n_layers (1.3), move attention pool (3.1), no derived features (5.5), flat joint action space (6.1), replay buffer strategy (8.1), loss weights (8.2), value target + z-tag (8.4), forced-decision skip (8.7), validation curriculum (8.8), GT-CFR-direct for Phase 1 (9.1), expansion budget (9.2), chance bucketing (9.3), MCCFR samples (9.4), top-K candidates (9.5), simultaneous turn-node (9.6), chance fan-out K=5 (9.8), full multi-turn growth (9.9), inner-loop budgets (9.10) |
 | **Med (value head)** | 1 | Value-head combination function (10.3) |
-| **Low** | 14 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), system design (11.1–11.2) |
+| **Low** | 17 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), action sampling temperature (8.5), tuple ObsBundle + sparse σ̄ (8.6), single-process + max_decisions cap (8.9), system design (11.1–11.2) |

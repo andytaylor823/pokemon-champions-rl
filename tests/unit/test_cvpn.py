@@ -304,14 +304,14 @@ class TestMaskCorrectness:
         policy, _ = default_cvpn(tp_obs)
         probs = torch.softmax(policy, dim=-1)
         idx = torch.multinomial(probs, 1).item()
-        choice = action_space.index_to_choice_string(idx)
+        choice = action_space.action_to_choice_contextual(idx, None)
         assert choice.startswith("team ")
 
     def test_sampled_move_index_maps_to_valid_choice(self, default_cvpn, move_obs):
         policy, _ = default_cvpn(move_obs)
         probs = torch.softmax(policy, dim=-1)
         idx = torch.multinomial(probs, 1).item()
-        choice = action_space.index_to_choice_string(idx)
+        choice = action_space.action_to_choice_contextual(idx, None)
         # Move phase choices contain "move" or "switch"
         assert "move" in choice or "switch" in choice
 

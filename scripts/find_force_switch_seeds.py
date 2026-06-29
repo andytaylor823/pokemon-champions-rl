@@ -21,7 +21,7 @@ from action_space import (
     MOVE_PHASE_OFFSET,
     MoveAction,
     _index_to_slot_action,
-    index_to_choice_string,
+    action_to_choice_contextual,
     legal_mask,
 )
 from sim_client import SimClient, SimError
@@ -134,7 +134,7 @@ def try_seed(sc: SimClient, battle_seed: list[int], max_turns: int = 50) -> tupl
             choices = {}
             for s in cur_v.to_move:
                 pick = _pick_aggressive(masks[s], rng)
-                choices[s] = index_to_choice_string(pick)
+                choices[s] = action_to_choice_contextual(pick, None)
             try:
                 res = sc.step(cur_h, choices, seed=_rng_seed(rng))
                 cur_h = res.child

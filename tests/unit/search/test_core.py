@@ -1,11 +1,10 @@
-"""Unit tests for search.core — search() orchestration and _single_move_result.
+"""Unit tests for search.core — search() orchestration and forced-root guard.
 
 Migrated from tests/unit/test_search.py:
-  - TestSingleLegalMoveSkip
+  - TestForcedRootGuard (was TestSingleLegalMoveSkip)
 
 New gap tests:
   - search() normal path: loop count, cleanup on exception, config=None (gap #2)
-  - _single_move_result: multi-action returns None, unilateral forced (gap #3)
   - Iteration numbering monotonicity (gap #34)
 """
 from __future__ import annotations
@@ -17,18 +16,18 @@ import torch
 
 import action_space as as_mod
 from search import SearchConfig, SearchResult, search
-from search.core import _single_move_result
+
 
 # ---------------------------------------------------------------------------
-# _single_move_result tests (migrated + gaps #3)
+# Forced-root guard tests
 # ---------------------------------------------------------------------------
 
 
-class TestSingleLegalMoveSkip:
-    """Test that _single_move_result / search returns immediately when only one action is legal."""
+class TestForcedRootGuard:
+    """search() must raise ValueError when called on a forced decision."""
 
-    def test_single_action_both_sides(self):
-        """When both sides have exactly one legal action, skip search entirely."""
+    def test_raises_on_forced_both_sides(self):
+        """Both sides forced -> ValueError, no CVPN or sim interaction."""
         mock_view = MagicMock()
         mock_view.phase = "forceSwitch"
         mock_view.to_move = ["p1", "p2"]
@@ -45,49 +44,15 @@ class TestSingleLegalMoveSkip:
 
         mock_sim = MagicMock()
         mock_net = MagicMock()
-        mock_value = torch.tensor(0.3)
-        mock_net.return_value = (torch.zeros(as_mod.A), mock_value)
 
-        with patch("search.expansion.encode") as mock_encode:
-            mock_encode.return_value = MagicMock()
-            result = search(mock_view, mock_sim, mock_net, from_handle=99, config=SearchConfig())
+        with pytest.raises(ValueError, match="forced decision"):
+            search(mock_view, mock_sim, mock_net, from_handle=99, config=SearchConfig())
 
-        assert isinstance(result, SearchResult)
-        for s in ["p1", "p2"]:
-            assert len(result.strategy[s]) == 1
-            assert next(iter(result.strategy[s].values())) == 1.0
-        assert abs(result.value - 0.3) < 1e-5
         mock_sim.open_search.assert_not_called()
+        mock_net.assert_not_called()
 
-    def test_multi_action_returns_none(self):
-        """When a side has multiple legal actions, _single_move_result returns None."""
-        mock_view = MagicMock()
-        mock_view.phase = "move"
-        mock_view.to_move = ["p1", "p2"]
-        # p1 has 2 moves per slot -> many joint actions -> not single-move
-        mock_view.legal = {
-            "p1": {"active": [
-                {"moves": [{"id": "thunderbolt", "pp": 10, "target": "normal"}, {"id": "protect", "pp": 10, "target": "self"}]},
-                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
-            ], "side": {"pokemon": [
-                {"condition": "100/100"}, {"condition": "100/100"},
-                {"condition": "100/100"}, {"condition": "100/100"},
-            ]}},
-            "p2": {"active": [
-                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
-                {"moves": [{"id": "protect", "pp": 10, "target": "self"}]},
-            ], "side": {"pokemon": [
-                {"condition": "100/100"}, {"condition": "100/100"},
-                {"condition": "100/100"}, {"condition": "100/100"},
-            ]}},
-        }
-
-        mock_net = MagicMock()
-        result = _single_move_result(mock_view, mock_net)
-        assert result is None
-
-    def test_unilateral_single_action(self):
-        """Unilateral forced move (only one side to_move with one action) returns a result."""
+    def test_raises_on_unilateral_forced(self):
+        """Single side in to_move with one legal action -> ValueError."""
         mock_view = MagicMock()
         mock_view.phase = "forceSwitch"
         mock_view.to_move = ["p1"]
@@ -98,16 +63,8 @@ class TestSingleLegalMoveSkip:
             ]}},
         }
 
-        mock_net = MagicMock()
-        mock_net.return_value = (torch.zeros(as_mod.A), torch.tensor(0.5))
-
-        with patch("search.expansion.encode", return_value=MagicMock()):
-            result = _single_move_result(mock_view, mock_net)
-
-        assert result is not None
-        assert "p1" in result.strategy
-        assert len(result.strategy["p1"]) == 1
-        assert next(iter(result.strategy["p1"].values())) == 1.0
+        with pytest.raises(ValueError, match="forced decision"):
+            search(mock_view, MagicMock(), MagicMock(), from_handle=99, config=SearchConfig())
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from action_space import index_to_choice_string
+from action_space import action_to_choice_contextual, forced_actions
 from encoder import encode
 from obs_bundle import ObsBundle, collate_obs_bundles
 from search.cfr import regret_matching
@@ -22,7 +22,7 @@ from sim_client import SimError
 
 if TYPE_CHECKING:
     from cvpn import CVPN
-    from sim_client import SimClient, StepResult
+    from sim_client import SimClient
     from state_types import StateView
 
 # Absolute depth cap for puct_expand_one descent to prevent runaway loops.
@@ -87,14 +87,60 @@ def _terminal_utility_p1(view: StateView) -> float:
 def _cell_choices(node: TurnNode, i: int, j: int) -> dict[str, str]:
     """Build the SimClient choice dict for grid cell (i, j).
 
-    Only includes acting sides — the non-acting side's placeholder action is
-    not sent to SimClient.
+    Uses the contextual builder so spread/self/charging moves get their targets
+    stripped and slot-specific ally targets are resolved correctly.
     """
     choices: dict[str, str] = {}
     for side, idx in (("p1", i), ("p2", j)):
         if side in node.to_move:
-            choices[side] = index_to_choice_string(node.info[side].actions[idx])
+            legal_req = node.view.legal.get(side) if node.view else None
+            choices[side] = action_to_choice_contextual(
+                node.info[side].actions[idx], legal_req
+            )
     return choices
+
+
+# ---------------------------------------------------------------------------
+# Forced-node collapse helpers
+# ---------------------------------------------------------------------------
+
+# Safety cap for chained forced decisions (e.g. multi-faint forced switches).
+# In practice these chains are 1–2 steps; the cap prevents pathological loops.
+_MAX_FORCED_CHAIN = 20
+
+
+def _collapse_forced(
+    sim: SimClient,
+    handle: int,
+    view: StateView,
+) -> tuple[int, StateView]:
+    """Step through a chain of forced decisions to the next genuine decision or terminal.
+
+    A forced decision (every acting side has exactly one legal action) carries
+    no strategic choice, so it is collapsed transparently — no CVPN forward,
+    no regret tables, no tree node (self-play.md §2.2, search.md §8).
+
+    Returns (final_handle, final_view) at the first genuine decision, terminal,
+    or non-acting state encountered.
+    """
+    for _ in range(_MAX_FORCED_CHAIN):
+        if view.terminal:
+            break
+        forced = forced_actions(view.legal, view.to_move, view.phase)
+        if forced is None:
+            break
+        choices = {
+            s: action_to_choice_contextual(idx, view.legal.get(s))
+            for s, idx in forced.items()
+        }
+        seed = _generate_seed()
+        try:
+            result = sim.step(handle, choices, seed)
+        except SimError:
+            break
+        handle = result.child
+        view = result.view
+    return handle, view
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +220,9 @@ def expand_turn_node(
         return
 
     # --- Stage 2: Step all k x k grid cells through SimClient ---
-    grid_results: list[tuple[int, int, StepResult]] = []
+    # Each cell is stepped, then forced decisions are collapsed transparently
+    # so the CVPN only evaluates genuine decision points or terminals.
+    cell_results: list[tuple[int, int, int, StateView]] = []
     for i in range(k_p1):
         for j in range(k_p2):
             choices = _cell_choices(node, i, j)
@@ -187,10 +235,12 @@ def expand_turn_node(
                 result = sim.step(node.handle, choices, seed)
             except SimError:
                 continue
-            grid_results.append((i, j, result))
+            # Collapse any forced decisions after the step (no CVPN, no regret tables)
+            child_handle, child_view = _collapse_forced(sim, result.child, result.view)
+            cell_results.append((i, j, child_handle, child_view))
 
     # --- Stage 3: Batch-evaluate all resulting states with CVPN ---
-    if not grid_results:
+    if not cell_results:
         # All cells failed (mask/engine discrepancy) — mark as expanded but empty
         node.expanded = True
         return
@@ -198,18 +248,17 @@ def expand_turn_node(
     child_bundles: list[ObsBundle] = []
     child_info: list[tuple[int, int, int, StateView]] = []  # (i, j, child_handle, child_view)
 
-    for i, j, result in grid_results:
-        child_view = result.view
+    for i, j, child_handle, child_view in cell_results:
         if child_view.terminal:
             # Terminal — use real payoff, no CVPN needed
             utility_p1 = _terminal_utility_p1(child_view)
-            chance = ChanceNode(children=[ChanceOutcome(handle=result.child, leaf_value_p1=utility_p1)])
+            chance = ChanceNode(children=[ChanceOutcome(handle=child_handle, leaf_value_p1=utility_p1)])
             node.grid[(i, j)] = chance
         else:
-            # Non-terminal — encode for CVPN value evaluation (from p1 perspective)
+            # Non-terminal genuine decision — encode for CVPN value evaluation
             obs = encode(child_view, "p1")
             child_bundles.append(obs)
-            child_info.append((i, j, result.child, child_view))
+            child_info.append((i, j, child_handle, child_view))
 
     # Batch forward for non-terminal children
     if child_bundles:
@@ -245,13 +294,14 @@ def _expand_chance_child(
         result = sim.step(node.handle, choices, seed)
     except SimError:
         return
-    child_view = result.view
+    # Collapse any forced decisions after the step
+    child_handle, child_view = _collapse_forced(sim, result.child, result.view)
 
     if child_view.terminal:
-        chance.children.append(ChanceOutcome(handle=result.child, leaf_value_p1=_terminal_utility_p1(child_view)))
+        chance.children.append(ChanceOutcome(handle=child_handle, leaf_value_p1=_terminal_utility_p1(child_view)))
     else:
         value_p1 = cvpn_value(net, child_view)
-        chance.children.append(ChanceOutcome(handle=result.child, leaf_value_p1=value_p1))
+        chance.children.append(ChanceOutcome(handle=child_handle, leaf_value_p1=value_p1))
 
 
 def _expand_child_turn_node(
@@ -262,20 +312,32 @@ def _expand_child_turn_node(
 ) -> TurnNode | None:
     """Expand a frontier leaf into a full TurnNode (if it's a decision point).
 
-    Sets outcome.node in-place so CFR+ and PUCT can traverse the child directly
-    without an external registry.
+    If the child state is a forced decision (every acting side has one legal
+    action), collapses through it transparently to the next genuine decision or
+    terminal — no degenerate TurnNode is created. Sets outcome.node in-place so
+    CFR+ and PUCT can traverse the child directly without an external registry.
     """
     child_view = sim.view(outcome.handle)
 
     if child_view.terminal:
         return None
 
-    # No acting sides means nothing to decide (shouldn't happen for non-terminals)
+    if not child_view.to_move:
+        return None
+
+    # Collapse through forced decisions to the next genuine decision/terminal
+    handle, child_view = _collapse_forced(sim, outcome.handle, child_view)
+
+    if child_view.terminal:
+        # Forced chain ended at a terminal — update cached value, no TurnNode
+        outcome.leaf_value_p1 = _terminal_utility_p1(child_view)
+        return None
+
     if not child_view.to_move:
         return None
 
     child_node = TurnNode(
-        handle=outcome.handle,
+        handle=handle,
         view=child_view,
         to_move=child_view.to_move,
     )

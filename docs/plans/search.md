@@ -261,11 +261,20 @@ CFR improvement operator (**bootstrapping**).
 
 ## 8. Adaptive compute
 
-- **Single-legal-move skip (build now).** If a side's legal mask has exactly one legal joint
-  action, fix it without searching; if both sides do, return immediately with mass-1.0 average
-  strategy (value from a single CVPN evaluation if a training target is needed). Composes with
-  the planned action-space canonicalization (`repo-architecture.md` §6): the double-faint
-  "bring both back" case collapses to one canonical action and is auto-skipped.
+- **Single-legal-move skip + forced-node collapse (implemented).** If a side's legal mask has
+  exactly one legal joint action, fix it without searching; if both sides do, return immediately
+  with mass-1.0 average strategy and **value = 0.0** (no CVPN evaluation — forced decisions carry
+  no strategic content; `self-play.md` §2.2). **In-tree collapse** is also implemented: when
+  PUCT expansion encounters a forced node (every acting side has one legal action), `expansion.py`
+  steps transparently through the forced action(s) — resolving any chance — to the next genuine
+  decision / chance / terminal, and only CVPN-evaluates there. Chains of forced decisions (e.g.
+  multi-faint forced switches) are collapsed iteratively. No degenerate decision nodes, no wasted
+  CVPN forwards, no meaningless regret tables. Implementation:
+  - `core.py` `search()` guards against forced roots via `forced_actions(...)` — raises
+    `ValueError` so callers must skip forced states before entering search.
+  - `expansion.py` `_collapse_forced` chains through forced states iteratively. Called from
+    `expand_turn_node` (grid cell evaluation), `_expand_chance_child` (widening),
+    and `_expand_child_turn_node` (deepening).
 - **All other early-stopping is DEFERRED** — including an average-strategy-convergence early
   stop (abort once σ̄ stops changing between CFR+ passes, KL < ε; the GT-CFR analogue of Lc0's
   smart pruning) and any dynamic per-turn time budget. Defer until search cost is a measured
@@ -302,7 +311,7 @@ in Python — `SimClient` is the sole source of truth.)
   is what makes each chance roll a fresh sampled world); `view(handle)`; `close_search(session)`
   frees the whole tree's handles in one shot at the end. Handles are immutable snapshots, so the
   parent stays steppable with other cells/seeds.
-- `src/action_space.py` — `legal_mask(request, phase) -> [A] bool`; `index_to_choice_string(idx)
+- `src/action_space.py` — `legal_mask(request, phase) -> [A] bool`; `action_to_choice_contextual(idx, request)
   -> str` (canonical action index → Showdown choice string for `step`); `choice_string_to_index`;
   constants `A`, `TEAM_PREVIEW_*`, `MOVE_PHASE_*`.
 - `src/encoder.py` — `encode(view, perspective) -> ObsBundle` (perspective ∈ {"p1","p2"}; builds
@@ -361,6 +370,10 @@ All deferred deliberately; none blocks Phase 1.
    audit searches, or adapting `k` to how sharp/flat the prior is (vibes 9.7).
 5. **Budgets** — `expansion_budget`, `cfr_iters_per_expansion`, `c_puct`, `k`, `K` are all
    empirical; the values here are starting guesses, not commitments (vibes 9.2, 9.8, 9.10).
+6. ~~**Forced-node collapse**~~ — **Resolved.** Forced decisions are now fully collapsed throughout
+   the tree: `_single_move_result` returns `value=0.0` with no CVPN call; `_collapse_forced` in
+   `expansion.py` steps transparently through forced chains during expansion (grid eval, widening,
+   deepening). No degenerate decision nodes are created. See §8.
 
 ## 13. Exit criteria for Phase 1 (what "done" means)
 

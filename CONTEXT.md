@@ -226,6 +226,16 @@ GT-CFR + CVPN with imperfect information. Belief-weighted candidate tokens, per-
 _Avoid_: Calling this "the endgame" (Phase 5 refinement follows)
 _See_: `docs/architecture/gt-cfr-theory.md` §14; `docs/architecture/state-encoding.md` §10
 
+**Validation curriculum**:
+The staged sequence of fixed, hand-crafted matchups of increasing complexity used to prove the architecture finds the known-correct solution at each level before adding complexity. Begins with the absolute simplest case (all-Fire vs all-Grass, two moves each) and climbs toward two balanced teams. The spine of how Phase-1 feasibility is demonstrated.
+_Avoid_: Curriculum learning (that's a training-acceleration technique; this is a validation methodology), test suite
+_See_: `docs/plans/self-play.md` §6.2; `docs/plans/evaluation.md`
+
+**Curriculum stage**:
+One matchup in the validation curriculum, with a humanly-verifiable correct outcome (e.g. "the favored team wins far more often"). Each stage is trained from scratch as an independent correctness proof, and optionally warm-started from the previous stage as a side experiment.
+_Avoid_: Phase (a build phase is the whole system regime; a stage is one curriculum matchup)
+_See_: `docs/plans/self-play.md` §6.2
+
 ### Pokemon Domain
 
 **Joint action**:
@@ -242,6 +252,16 @@ _See_: `docs/architecture/gt-cfr-theory.md` §13; `docs/research/article_summary
 A unilateral decision after a Pokemon faints mid-turn. Breaks the simultaneous pattern — only the player who lost a Pokemon acts. A single-player decision node in the tree.
 _Avoid_: Free switch (different concept — pivot moves give free switches)
 _See_: `docs/architecture/gt-cfr-theory.md` §13; `docs/research/article_summary_4.md` "What the Pokemon Tree Actually Looks Like"
+
+**Forced decision**:
+A state where every acting side has exactly one legal action — pure game ceremony with no strategic choice (e.g. a forced switch to your only remaining Pokemon, or a Choice-locked slot with one legal target). Its value is fully determined by its successors, so it is skipped entirely: no search, no network evaluation, no training signal. Distinct from a forced switch, which can still be a genuine decision (which of several Pokemon to bring).
+_Avoid_: Forced switch (a forced switch is only a forced *decision* when a single legal target remains)
+_See_: `docs/plans/self-play.md` §2.2; `docs/plans/search.md` §8
+
+**Matchup**:
+A pairing of two concrete teams for one game. Supplied by a MatchupSource; in Phase 1 drawn from the fixed validation curriculum.
+_Avoid_: Game (a matchup is the teams, not the played-out game), pairing (too generic)
+_See_: `docs/plans/self-play.md` §6
 
 **Meta priors**:
 Tournament-data-derived probability distributions over what sets each species is likely to run, conditioned on teammates and revealed info. The abstraction layer that makes the opponent's combinatorially huge private-state space finite and tractable.

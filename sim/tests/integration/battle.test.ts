@@ -129,3 +129,62 @@ describe("full battle completion", () => {
     expect(sizeKiB).toBeGreaterThan(1);
   });
 });
+
+describe("cloneBattle sentLogPos fix", () => {
+  /**
+   * Apply the sentLogPos fix from sim-worker.ts cloneBattle.
+   * State.deserializeBattle resets sentLogPos to 0 (constructor default),
+   * which causes a false "Infinite loop" error once the log grows long.
+   */
+  function cloneWithFix(battle: any): any {
+    const clone = cloneViaJson(battle);
+    clone.sentLogPos = clone.log.length;
+    return clone;
+  }
+
+  it("unfixed clone has sentLogPos=0 (the bug this fix addresses)", () => {
+    const battle = makeBattle(ROOT_SEED);
+    advance(battle, 5);
+    expect(battle.log.length).toBeGreaterThan(0);
+
+    // Raw deserialization leaves sentLogPos at 0 — this is the bug
+    const rawClone = cloneViaJson(battle);
+    expect(rawClone.sentLogPos).toBe(0);
+  });
+
+  it("fixed clone has sentLogPos equal to log length", () => {
+    const battle = makeBattle(ROOT_SEED);
+    advance(battle, 5);
+    const originalLogLen = battle.log.length;
+    expect(originalLogLen).toBeGreaterThan(0);
+
+    const clone = cloneWithFix(battle);
+    expect(clone.sentLogPos).toBe(clone.log.length);
+    expect(clone.log.length).toBe(originalLogLen);
+  });
+
+  it("fixed clone with long log does not trigger false-positive infinite loop", () => {
+    const battle = makeBattle(ROOT_SEED);
+    advance(battle, 20);
+    expect(battle.log.length).toBeGreaterThan(100);
+
+    const clone = cloneWithFix(battle);
+    expect(clone.sentLogPos).toBe(clone.log.length);
+
+    // Stepping the fixed clone should not throw "Infinite loop"
+    expect(() => {
+      advance(clone, null);
+    }).not.toThrow();
+  });
+
+  it("fixed clone still produces valid game output", () => {
+    const battle = makeBattle(ROOT_SEED);
+    advance(battle, 10);
+
+    const clone = cloneWithFix(battle);
+    advance(clone, null);
+
+    expect(clone.ended).toBe(true);
+    expect(typeof clone.winner).toBe("string");
+  });
+});

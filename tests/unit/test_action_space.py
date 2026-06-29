@@ -887,6 +887,113 @@ class TestForceSwithNoBench:
         assert mask.sum() == 1, "Only PASS x PASS should be legal"
 
 
+class TestForceSwitchDoubleFaint:
+    """Double forced-switch (both active fainted) — joint legality the per-slot outer
+    product cannot express.
+
+    Regression guard for the empty-mask self-play abort: with exactly one live bench
+    mon, both slots enumerate the same lone switch and the cross-slot collision guard
+    erases the only joint, leaving an empty mask. Showdown actually wants the mon
+    brought into one slot with the other passed ("switch N, pass"). The expected
+    choice strings here were captured from a real sim-worker (engine ground truth).
+    """
+
+    @staticmethod
+    def _request(bench_conditions: list[str]) -> dict:
+        """forceSwitch=[True, True] with two fainted actives and the given bench
+        conditions for team slots 3 and 4."""
+        return {
+            "forceSwitch": [True, True],
+            "active": [],
+            "side": {"pokemon": [
+                {"condition": "0 fnt", "active": True},
+                {"condition": "0 fnt", "active": True},
+                {"condition": bench_conditions[0], "active": False},
+                {"condition": bench_conditions[1], "active": False},
+            ]},
+        }
+
+    def test_one_bench_mon_slot3_emits_switch_pass(self):
+        """The bug, mirroring captured self-play aborts (slot 3 alive)."""
+        req = self._request(["95/205", "0 fnt"])
+        mask = legal_mask(req, "forceSwitch")
+        assert mask.sum() == 2, "Expected exactly the two (switch, pass) orderings"
+        choices = {action_to_choice_contextual(int(i), req) for i in mask.nonzero()[0]}
+        assert choices == {"switch 3, pass", "pass, switch 3"}
+
+    def test_one_bench_mon_slot4_emits_switch_pass(self):
+        """Captured variant where the surviving bench mon is in slot 4."""
+        req = self._request(["0 fnt", "1/185"])
+        mask = legal_mask(req, "forceSwitch")
+        assert mask.sum() == 2
+        choices = {action_to_choice_contextual(int(i), req) for i in mask.nonzero()[0]}
+        assert choices == {"switch 4, pass", "pass, switch 4"}
+
+    def test_two_bench_mons_distinct_switches_no_collision(self):
+        """Two live bench mons -> both slots switch to distinct mons; no pass, no (X, X)."""
+        req = self._request(["150/150", "120/120"])
+        mask = legal_mask(req, "forceSwitch")
+        assert mask.sum() == 2
+        choices = {action_to_choice_contextual(int(i), req) for i in mask.nonzero()[0]}
+        assert choices == {"switch 3, switch 4", "switch 4, switch 3"}
+        sw3 = _slot_action_to_index(None, None, False, 1)
+        sw4 = _slot_action_to_index(None, None, False, 2)
+        assert not mask[MOVE_PHASE_OFFSET + sw3 * ACTIONS_PER_SLOT + sw3]
+        assert not mask[MOVE_PHASE_OFFSET + sw4 * ACTIONS_PER_SLOT + sw4]
+
+    def test_no_bench_mons_pass_pass(self):
+        """No live bench mons -> only (pass, pass) (usually a terminal state)."""
+        req = self._request(["0 fnt", "0 fnt"])
+        mask = legal_mask(req, "forceSwitch")
+        assert mask.sum() == 1
+        pass_pass = MOVE_PHASE_OFFSET + PASS_INDEX * ACTIONS_PER_SLOT + PASS_INDEX
+        assert mask[pass_pass]
+
+    @pytest.mark.parametrize("bench", [
+        ["150/150", "120/120"],
+        ["150/150", "0 fnt"],
+        ["0 fnt", "1/185"],
+        ["0 fnt", "0 fnt"],
+    ])
+    def test_mask_never_empty(self, bench):
+        """Invariant: an acting side always has at least one legal joint action.
+
+        An empty mask is exactly what crashed self-play (empty strategy -> aborted game).
+        """
+        assert legal_mask(self._request(bench), "forceSwitch").sum() >= 1
+
+    def test_switch_pass_roundtrips(self):
+        """Every emitted joint round-trips through choice_string_to_index."""
+        req = self._request(["95/205", "0 fnt"])
+        mask = legal_mask(req, "forceSwitch")
+        for idx in mask.nonzero()[0]:
+            choice = action_to_choice_contextual(int(idx), req)
+            assert choice_string_to_index(choice) == int(idx)
+
+
+class TestForcedPassChoiceString:
+    """A passed slot under a forceSwitch must render an explicit 'pass' (Showdown
+    rejects the bare 'switch N' when both slots are forced)."""
+
+    def test_forced_switch_pass_is_explicit(self):
+        sw = _slot_action_to_index(None, None, False, 1)  # switch bench1 -> team slot 3
+        idx = MOVE_PHASE_OFFSET + sw * ACTIONS_PER_SLOT + PASS_INDEX
+        req = {"forceSwitch": [True, True], "active": []}
+        assert action_to_choice_contextual(idx, req) == "switch 3, pass"
+
+    def test_forced_pass_switch_is_explicit(self):
+        sw = _slot_action_to_index(None, None, False, 1)
+        idx = MOVE_PHASE_OFFSET + PASS_INDEX * ACTIONS_PER_SLOT + sw
+        req = {"forceSwitch": [True, True], "active": []}
+        assert action_to_choice_contextual(idx, req) == "pass, switch 3"
+
+    def test_non_forced_trailing_pass_still_collapses(self):
+        """Without forceSwitch context, a trailing pass is omitted (unchanged behavior)."""
+        mv = _slot_action_to_index(0, 1, False, None)
+        idx = MOVE_PHASE_OFFSET + mv * ACTIONS_PER_SLOT + PASS_INDEX
+        assert action_to_choice_contextual(idx, None) == "move 1 1"
+
+
 class TestPerSlotTrapped:
     """Per-slot trapping (e.g. charging Solar Beam) excludes switches for that slot."""
 

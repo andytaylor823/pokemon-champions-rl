@@ -258,9 +258,20 @@ def legal_mask(request: dict | None, phase: str) -> np.ndarray:
 
 def _fill_move_phase_mask(mask: np.ndarray, request: dict) -> None:
     """Fill the move-phase portion of the mask from a Showdown request."""
-    active = request.get("active", [])
     side_pokemon = request.get("side", {}).get("pokemon", [])
+    force_switch = request.get("forceSwitch", [])
 
+    # Double forced-switch (both active fainted) is a joint constraint the per-slot
+    # outer product cannot express: with exactly one eligible bench mon, both slots
+    # enumerate the same lone switch and the cross-slot collision guard erases the
+    # only joint, leaving an empty mask. Showdown instead wants the mon brought into
+    # one slot with the other slot explicitly passed ("switch N, pass"), so handle
+    # the both-forced case directly.
+    if len(force_switch) >= 2 and force_switch[0] and force_switch[1]:
+        _fill_double_force_switch(mask, side_pokemon)
+        return
+
+    active = request.get("active", [])
     slot1_legal = _slot_legal_actions(active, side_pokemon, slot_idx=0, request=request)
     slot2_legal = _slot_legal_actions(active, side_pokemon, slot_idx=1, request=request)
 
@@ -272,6 +283,33 @@ def _fill_move_phase_mask(mask: np.ndarray, request: dict) -> None:
                 continue
             joint_idx = MOVE_PHASE_OFFSET + s1 * ACTIONS_PER_SLOT + s2
             mask[joint_idx] = True
+
+
+def _fill_double_force_switch(mask: np.ndarray, side_pokemon: list) -> None:
+    """Set legal joints when BOTH active slots must switch (a double faint).
+
+    Showdown requires bringing in as many bench Pokemon as possible:
+      - >= 2 eligible bench mons: both slots switch, to distinct mons;
+      - exactly one: it fills either slot while the other passes (both orderings);
+      - none: both slots pass (usually a terminal state, included for completeness).
+    """
+    switches = _legal_switches(side_pokemon)
+
+    def _set(s1: int, s2: int) -> None:
+        mask[MOVE_PHASE_OFFSET + s1 * ACTIONS_PER_SLOT + s2] = True
+
+    if len(switches) >= 2:
+        for s1 in switches:
+            for s2 in switches:
+                if _SWITCH_INDEX_TO_BENCH[s1] == _SWITCH_INDEX_TO_BENCH[s2]:
+                    continue
+                _set(s1, s2)
+    elif len(switches) == 1:
+        (only_switch,) = switches
+        _set(only_switch, PASS_INDEX)
+        _set(PASS_INDEX, only_switch)
+    else:
+        _set(PASS_INDEX, PASS_INDEX)
 
 
 def _slot_legal_actions(active: list, side_pokemon: list, slot_idx: int, request: dict) -> list[int]:
@@ -418,14 +456,18 @@ def forced_actions(legal: dict, to_move: list[str], phase: str) -> dict[str, int
 
 
 def _slot_choice_contextual(
-    action: SlotAction, slot_moves: list[dict] | None, slot_pos: int
+    action: SlotAction, slot_moves: list[dict] | None, slot_pos: int, force_pass: bool = False
 ) -> str:
     """Build a Showdown choice fragment, stripping target if the move doesn't accept one.
 
     Combines slot-aware ally targeting with target-type stripping for spread/self moves.
+    A passed slot normally emits nothing (the caller collapses it away), but a slot
+    under a forceSwitch must emit an explicit "pass" so Showdown receives a choice for
+    every forced slot — e.g. "switch 3, pass" in a double faint with one bench mon left,
+    which Showdown rejects when written as the bare "switch 3".
     """
     if isinstance(action, PassAction):
-        return ""
+        return "pass" if force_pass else ""
     if isinstance(action, SwitchAction):
         return f"switch {action.team_slot}"
 
@@ -467,11 +509,16 @@ def action_to_choice_contextual(action_idx: int, legal_request: dict | None) -> 
     slot2_action = _index_to_slot_action(slot2_idx)
 
     active = (legal_request or {}).get("active", [])
+    force_switch = (legal_request or {}).get("forceSwitch", [])
     slot1_moves = active[0].get("moves", []) if len(active) > 0 else []
     slot2_moves = active[1].get("moves", []) if len(active) > 1 else []
 
-    slot1_str = _slot_choice_contextual(slot1_action, slot1_moves, slot_pos=0)
-    slot2_str = _slot_choice_contextual(slot2_action, slot2_moves, slot_pos=1)
+    # A slot under a forceSwitch must emit an explicit "pass" (see _slot_choice_contextual).
+    force_pass_0 = len(force_switch) > 0 and bool(force_switch[0])
+    force_pass_1 = len(force_switch) > 1 and bool(force_switch[1])
+
+    slot1_str = _slot_choice_contextual(slot1_action, slot1_moves, slot_pos=0, force_pass=force_pass_0)
+    slot2_str = _slot_choice_contextual(slot2_action, slot2_moves, slot_pos=1, force_pass=force_pass_1)
 
     if slot1_str and slot2_str:
         return f"{slot1_str}, {slot2_str}"

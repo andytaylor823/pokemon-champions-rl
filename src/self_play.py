@@ -284,6 +284,7 @@ def run(
         pending: list[_PendingTuple] = []
         decision_idx = 0
         aborted = False
+        handle: int | None = None
 
         try:
             # Start a new battle
@@ -386,4 +387,6 @@ def run(
 
         except SimError as e:
             logger.warning("Game %d aborted due to SimError: %s", game_id, e)
+            if handle is not None:
+                sim.release(handle)
             continue

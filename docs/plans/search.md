@@ -270,9 +270,10 @@ CFR improvement operator (**bootstrapping**).
   decision / chance / terminal, and only CVPN-evaluates there. Chains of forced decisions (e.g.
   multi-faint forced switches) are collapsed iteratively. No degenerate decision nodes, no wasted
   CVPN forwards, no meaningless regret tables. Implementation:
-  - `core.py` `_single_move_result` returns `value=0.0` (no `net` parameter, no CVPN call).
-  - `expansion.py` `_forced_view_choices` detects forced states; `_collapse_forced` chains through
-    them. Called in `expand_turn_node` (grid cell evaluation), `_expand_chance_child` (widening),
+  - `core.py` `search()` guards against forced roots via `forced_actions(...)` — raises
+    `ValueError` so callers must skip forced states before entering search.
+  - `expansion.py` `_collapse_forced` chains through forced states iteratively. Called from
+    `expand_turn_node` (grid cell evaluation), `_expand_chance_child` (widening),
     and `_expand_child_turn_node` (deepening).
 - **All other early-stopping is DEFERRED** — including an average-strategy-convergence early
   stop (abort once σ̄ stops changing between CFR+ passes, KL < ε; the GT-CFR analogue of Lc0's

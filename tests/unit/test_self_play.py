@@ -22,8 +22,11 @@ from self_play import (
     TrainingTuple,
     TupleMeta,
     _PendingTuple,
+    _advance,
     _is_forced,
+    _rng_seed,
     _sample_action,
+    _sample_and_step,
     run,
 )
 
@@ -450,6 +453,39 @@ class TestRunGenerator:
     @patch("self_play.search")
     @patch("self_play.encode")
     @patch("self_play.legal_mask")
+    def test_sim_error_mid_game_releases_handle(self, mock_mask, mock_encode, mock_search):
+        """Regression: SimError after new_battle must release the live handle."""
+        from sim_client import SimError
+
+        # Mask with multiple legal actions so search() is invoked
+        mask_multi = np.zeros(10, dtype=bool)
+        mask_multi[0] = True
+        mask_multi[1] = True
+        mock_mask.return_value = mask_multi
+
+        # search() raises SimError to simulate a mid-game crash
+        mock_search.side_effect = SimError("search exploded")
+
+        sim = MagicMock()
+        initial_view = _make_view(
+            phase="move", to_move=["p1", "p2"],
+            legal={"p1": {}, "p2": {}}, terminal=False,
+        )
+        sim.new_battle.return_value = (7, initial_view)
+
+        source = CurriculumMatchupSource([{"species": "A"}], [{"species": "B"}])
+        config = SelfPlayConfig(num_games=1, master_seed=1)
+
+        tuples = list(run(MagicMock(), source, sim, config))
+
+        # Game aborted — no tuples emitted
+        assert tuples == []
+        # The handle (7) from new_battle must have been released
+        sim.release.assert_called_once_with(7)
+
+    @patch("self_play.search")
+    @patch("self_play.encode")
+    @patch("self_play.legal_mask")
     def test_multiple_games(self, mock_mask, mock_encode, mock_search):
         """Running multiple games should yield tuples from all of them."""
         mask_multi = np.zeros(10, dtype=bool)
@@ -643,3 +679,448 @@ class TestSearchEmptyToMoveGuard:
 
         with pytest.raises(ValueError, match="empty to_move"):
             search(mock_view, MagicMock(), MagicMock(), from_handle=99, config=SearchConfig())
+
+
+# ---------------------------------------------------------------------------
+# Gap 4: _advance step+release contract
+# ---------------------------------------------------------------------------
+
+
+class TestAdvance:
+    """Test the _advance helper's step+release contract."""
+
+    def test_success_calls_step_then_release(self):
+        """On success: step first, then release old handle, return (child, view)."""
+        sim = MagicMock()
+        child_view = MagicMock()
+        sim.step.return_value = MagicMock(child=42, view=child_view)
+
+        result = _advance(sim, handle=10, choices={"p1": "move 1"}, seed=[1, 2, 3, 4])
+
+        assert result == (42, child_view)
+        sim.step.assert_called_once_with(10, {"p1": "move 1"}, [1, 2, 3, 4])
+        sim.release.assert_called_once_with(10)
+
+    def test_simerror_propagates_before_release(self):
+        """On SimError: exception propagates BEFORE release — old handle stays valid."""
+        from sim_client import SimError
+
+        sim = MagicMock()
+        sim.step.side_effect = SimError("bad choice")
+
+        with pytest.raises(SimError, match="bad choice"):
+            _advance(sim, handle=10, choices={"p1": "move 1"}, seed=[1, 2, 3, 4])
+
+        sim.step.assert_called_once()
+        sim.release.assert_not_called()
+
+    def test_release_receives_old_handle_not_child(self):
+        """release() must be called with the OLD handle, not the child handle."""
+        sim = MagicMock()
+        sim.step.return_value = MagicMock(child=99, view=MagicMock())
+
+        _advance(sim, handle=5, choices={}, seed=[0, 0, 0, 0])
+
+        sim.release.assert_called_once_with(5)
+
+
+# ---------------------------------------------------------------------------
+# Gap 5: _sample_and_step helper branches
+# ---------------------------------------------------------------------------
+
+
+class TestSampleAndStep:
+    """Test the _sample_and_step retry loop."""
+
+    def test_empty_strategy_returns_none(self):
+        """If a side's strategy is empty, returns None immediately."""
+        sim = MagicMock()
+        view = _make_view(to_move=["p1"], legal={"p1": {}})
+        strategy = {"p1": {}}
+        result = _sample_and_step(sim, 1, view, strategy, random.Random(0), 1.0)
+        assert result is None
+        sim.step.assert_not_called()
+
+    def test_first_attempt_success(self):
+        """Successful first attempt returns (child_handle, child_view)."""
+        sim = MagicMock()
+        child_view = _make_view(terminal=True)
+        sim.step.return_value = MagicMock(child=42, view=child_view)
+
+        view = _make_view(to_move=["p1"], legal={"p1": {}})
+        strategy = {"p1": {0: 1.0}}
+
+        result = _sample_and_step(sim, 1, view, strategy, random.Random(0), 1.0)
+
+        assert result is not None
+        assert result[0] == 42
+        sim.step.assert_called_once()
+
+    def test_all_retries_exhausted_returns_none(self):
+        """10 SimErrors in a row -> returns None."""
+        from sim_client import SimError
+
+        sim = MagicMock()
+        sim.step.side_effect = SimError("bad choice")
+
+        view = _make_view(to_move=["p1"], legal={"p1": {}})
+        strategy = {"p1": {0: 1.0}}
+
+        result = _sample_and_step(sim, 1, view, strategy, random.Random(0), 1.0)
+
+        assert result is None
+        assert sim.step.call_count == 10
+
+    def test_retry_then_success(self):
+        """First 3 attempts fail, 4th succeeds."""
+        from sim_client import SimError
+
+        sim = MagicMock()
+        child_view = _make_view(terminal=True)
+        step_ok = MagicMock(child=99, view=child_view)
+        sim.step.side_effect = [SimError("e1"), SimError("e2"), SimError("e3"), step_ok]
+
+        view = _make_view(to_move=["p1"], legal={"p1": {}})
+        strategy = {"p1": {0: 1.0}}
+
+        result = _sample_and_step(sim, 1, view, strategy, random.Random(0), 1.0)
+
+        assert result is not None
+        assert result[0] == 99
+        assert sim.step.call_count == 4
+
+
+# ---------------------------------------------------------------------------
+# Gap 6: run() empty-phase passthrough
+# ---------------------------------------------------------------------------
+
+
+class TestRunEmptyPhase:
+    """Test run() handling of non-acting states (empty to_move / phase='none')."""
+
+    @patch("self_play.search")
+    @patch("self_play.encode")
+    @patch("self_play.legal_mask")
+    def test_empty_to_move_advances_without_search(self, mock_mask, mock_encode, mock_search):
+        """When to_move is empty (non-terminal), advance with empty choices and continue."""
+        mask_multi = np.zeros(10, dtype=bool)
+        mask_multi[0] = True
+        mask_multi[1] = True
+        mock_mask.return_value = mask_multi
+
+        mock_result = MagicMock()
+        mock_result.strategy = {"p1": {0: 1.0}, "p2": {0: 1.0}}
+        mock_result.value = 0.0
+        mock_search.return_value = mock_result
+        mock_encode.return_value = MagicMock()
+
+        sim = MagicMock()
+        # First view: empty to_move (non-terminal, e.g. between-turn processing)
+        empty_phase_view = _make_view(phase="none", to_move=[], terminal=False)
+        # After advancing past empty phase: genuine decision
+        move_view = _make_view(
+            phase="move", to_move=["p1", "p2"],
+            legal={"p1": {}, "p2": {}}, terminal=False,
+        )
+        terminal_view = _make_view(
+            phase="terminal", to_move=[], terminal=True,
+            utility={"p1": 1.0, "p2": -1.0},
+        )
+
+        sim.new_battle.return_value = (1, empty_phase_view)
+        # First step advances past empty phase; second step reaches terminal
+        step1 = MagicMock(child=2, view=move_view)
+        step2 = MagicMock(child=3, view=terminal_view)
+        sim.step.side_effect = [step1, step2]
+
+        source = CurriculumMatchupSource([{"species": "A"}], [{"species": "B"}])
+        config = SelfPlayConfig(num_games=1, master_seed=1)
+
+        tuples = list(run(MagicMock(), source, sim, config))
+
+        # Should produce tuples from the genuine decision
+        assert len(tuples) == 2
+        # The first step call should have been with empty choices (empty phase)
+        first_call_choices = sim.step.call_args_list[0][0][1]
+        assert first_call_choices == {}
+
+
+# ---------------------------------------------------------------------------
+# Gap 7: run() handle release on normal terminal
+# ---------------------------------------------------------------------------
+
+
+class TestRunHandleRelease:
+    """Verify handle lifecycle: release called after terminal."""
+
+    @patch("self_play.search")
+    @patch("self_play.encode")
+    @patch("self_play.legal_mask")
+    def test_release_called_on_terminal(self, mock_mask, mock_encode, mock_search):
+        """After yielding all tuples, the terminal handle is released."""
+        mask_multi = np.zeros(10, dtype=bool)
+        mask_multi[0] = True
+        mask_multi[1] = True
+        mock_mask.return_value = mask_multi
+
+        mock_result = MagicMock()
+        mock_result.strategy = {"p1": {0: 1.0}, "p2": {0: 1.0}}
+        mock_result.value = 0.0
+        mock_search.return_value = mock_result
+        mock_encode.return_value = MagicMock()
+
+        sim = MagicMock()
+        initial_view = _make_view(
+            phase="move", to_move=["p1", "p2"],
+            legal={"p1": {}, "p2": {}}, terminal=False,
+        )
+        terminal_view = _make_view(
+            phase="terminal", to_move=[], terminal=True,
+            utility={"p1": 1.0, "p2": -1.0},
+        )
+        sim.new_battle.return_value = (1, initial_view)
+        step_result = MagicMock()
+        step_result.child = 2
+        step_result.view = terminal_view
+        sim.step.return_value = step_result
+
+        source = CurriculumMatchupSource([{"species": "A"}], [{"species": "B"}])
+        config = SelfPlayConfig(num_games=1, master_seed=1)
+
+        tuples = list(run(MagicMock(), source, sim, config))
+
+        assert len(tuples) == 2
+        # release should be called for old handle (via _advance) AND for terminal handle
+        release_calls = [call[0][0] for call in sim.release.call_args_list]
+        assert 1 in release_calls, "Old handle (1) should be released by _advance"
+        assert 2 in release_calls, "Terminal handle (2) should be released after yield"
+
+
+# ---------------------------------------------------------------------------
+# Gap 16: run() with config=None default
+# ---------------------------------------------------------------------------
+
+
+class TestRunConfigDefault:
+    """run() with config=None should use SelfPlayConfig defaults."""
+
+    @patch("self_play.search")
+    @patch("self_play.encode")
+    @patch("self_play.legal_mask")
+    def test_config_none_uses_defaults(self, mock_mask, mock_encode, mock_search):
+        """Passing config=None should not crash and use default SelfPlayConfig."""
+        mask_multi = np.zeros(10, dtype=bool)
+        mask_multi[0] = True
+        mask_multi[1] = True
+        mock_mask.return_value = mask_multi
+
+        mock_result = MagicMock()
+        mock_result.strategy = {"p1": {0: 1.0}, "p2": {0: 1.0}}
+        mock_result.value = 0.0
+        mock_search.return_value = mock_result
+        mock_encode.return_value = MagicMock()
+
+        sim = MagicMock()
+        terminal_view = _make_view(
+            phase="terminal", to_move=[], terminal=True,
+            utility={"p1": 0.0, "p2": 0.0},
+        )
+        sim.new_battle.return_value = (1, _make_view(
+            phase="move", to_move=["p1", "p2"],
+            legal={"p1": {}, "p2": {}}, terminal=False,
+        ))
+        sim.step.return_value = MagicMock(child=2, view=terminal_view)
+
+        source = CurriculumMatchupSource([{"species": "A"}], [{"species": "B"}])
+
+        # config=None explicitly — should default to SelfPlayConfig() with num_games=None (infinite)
+        # We need to break out after one game since num_games=None = infinite
+        gen = run(MagicMock(), source, sim, config=None)
+        first_batch = []
+        for t in gen:
+            first_batch.append(t)
+            if len(first_batch) >= 2:
+                break
+
+        assert len(first_batch) == 2
+
+
+# ---------------------------------------------------------------------------
+# Gap 17: _sample_action adversarial inputs
+# ---------------------------------------------------------------------------
+
+
+class TestSampleActionAdversarial:
+    """Adversarial and boundary inputs for _sample_action."""
+
+    def test_all_zero_probs_returns_valid_action(self):
+        """All-zero probs should fall back to uniform (degenerate case)."""
+        strategy = {0: 0.0, 1: 0.0, 2: 0.0}
+        rng = random.Random(42)
+        idx = _sample_action(strategy, rng, temperature=1.0)
+        assert idx in strategy
+
+    def test_near_zero_probs_returns_valid_action(self):
+        """Very small probs (near-zero) should still produce valid samples."""
+        strategy = {0: 1e-15, 1: 1e-15, 2: 1e-15}
+        rng = random.Random(42)
+        idx = _sample_action(strategy, rng, temperature=1.0)
+        assert idx in strategy
+
+    def test_equal_probs_all_sampled(self):
+        """Equal probs should sample all actions over many trials."""
+        strategy = {0: 0.5, 1: 0.5}
+        rng = random.Random(42)
+        seen = set()
+        for _ in range(100):
+            seen.add(_sample_action(strategy, rng, temperature=1.0))
+        assert seen == {0, 1}
+
+    def test_many_actions(self):
+        """100 actions with uniform probs should not crash."""
+        strategy = {i: 0.01 for i in range(100)}
+        rng = random.Random(42)
+        idx = _sample_action(strategy, rng, temperature=1.0)
+        assert 0 <= idx < 100
+
+    def test_single_zero_prob_with_temperature(self):
+        """Single action at prob 0.0 with temperature scaling."""
+        strategy = {0: 0.0}
+        rng = random.Random(42)
+        idx = _sample_action(strategy, rng, temperature=1.0)
+        assert idx == 0
+
+
+# ---------------------------------------------------------------------------
+# Gap 18: _rng_seed output shape
+# ---------------------------------------------------------------------------
+
+
+class TestRngSeed:
+    """Test _rng_seed returns correct format."""
+
+    def test_returns_4_ints(self):
+        rng = random.Random(42)
+        seed = _rng_seed(rng)
+        assert isinstance(seed, list)
+        assert len(seed) == 4
+        for s in seed:
+            assert isinstance(s, int)
+
+    def test_values_in_range(self):
+        rng = random.Random(42)
+        seed = _rng_seed(rng)
+        for s in seed:
+            assert 0 <= s <= 0xFFFF
+
+    def test_deterministic(self):
+        """Same RNG state produces same seeds."""
+        seed_a = _rng_seed(random.Random(99))
+        seed_b = _rng_seed(random.Random(99))
+        assert seed_a == seed_b
+
+
+# ---------------------------------------------------------------------------
+# Gap 19: z defaults to 0.0 when utility is None or missing
+# ---------------------------------------------------------------------------
+
+
+class TestZDefaultOnMissingUtility:
+    """Test z stamping edge cases when utility is None or missing keys."""
+
+    @patch("self_play.search")
+    @patch("self_play.encode")
+    @patch("self_play.legal_mask")
+    def test_none_utility_gives_zero_z(self, mock_mask, mock_encode, mock_search):
+        """When view.utility is None, z should default to 0.0."""
+        mask_multi = np.zeros(10, dtype=bool)
+        mask_multi[0] = True
+        mask_multi[1] = True
+        mock_mask.return_value = mask_multi
+
+        mock_result = MagicMock()
+        mock_result.strategy = {"p1": {0: 1.0}, "p2": {0: 1.0}}
+        mock_result.value = 0.0
+        mock_search.return_value = mock_result
+        mock_encode.return_value = MagicMock()
+
+        sim = MagicMock()
+        sim.new_battle.return_value = (1, _make_view(
+            phase="move", to_move=["p1", "p2"],
+            legal={"p1": {}, "p2": {}}, terminal=False,
+        ))
+        # Terminal view with utility=None
+        terminal_view = _make_view(
+            phase="terminal", to_move=[], terminal=True,
+            utility=None,
+        )
+        sim.step.return_value = MagicMock(child=2, view=terminal_view)
+
+        source = CurriculumMatchupSource([{"species": "A"}], [{"species": "B"}])
+        config = SelfPlayConfig(num_games=1, master_seed=1)
+
+        tuples = list(run(MagicMock(), source, sim, config))
+
+        for t in tuples:
+            assert t.z == 0.0
+
+    @patch("self_play.search")
+    @patch("self_play.encode")
+    @patch("self_play.legal_mask")
+    def test_missing_side_key_gives_zero_z(self, mock_mask, mock_encode, mock_search):
+        """When utility dict is missing a side's key, z defaults to 0.0."""
+        mask_multi = np.zeros(10, dtype=bool)
+        mask_multi[0] = True
+        mask_multi[1] = True
+        mock_mask.return_value = mask_multi
+
+        mock_result = MagicMock()
+        mock_result.strategy = {"p1": {0: 1.0}, "p2": {0: 1.0}}
+        mock_result.value = 0.0
+        mock_search.return_value = mock_result
+        mock_encode.return_value = MagicMock()
+
+        sim = MagicMock()
+        sim.new_battle.return_value = (1, _make_view(
+            phase="move", to_move=["p1", "p2"],
+            legal={"p1": {}, "p2": {}}, terminal=False,
+        ))
+        # Terminal view with only p1 in utility (p2 missing)
+        terminal_view = _make_view(
+            phase="terminal", to_move=[], terminal=True,
+            utility={"p1": 1.0},
+        )
+        sim.step.return_value = MagicMock(child=2, view=terminal_view)
+
+        source = CurriculumMatchupSource([{"species": "A"}], [{"species": "B"}])
+        config = SelfPlayConfig(num_games=1, master_seed=1)
+
+        tuples = list(run(MagicMock(), source, sim, config))
+
+        p1_tuple = next(t for t in tuples if t.meta.side == "p1")
+        p2_tuple = next(t for t in tuples if t.meta.side == "p2")
+        assert p1_tuple.z == 1.0
+        assert p2_tuple.z == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Gap 20: TupleMeta and TrainingTuple frozen immutability
+# ---------------------------------------------------------------------------
+
+
+class TestFrozenImmutability:
+    """Frozen dataclass fields should reject mutation."""
+
+    def test_tuple_meta_frozen(self):
+        meta = TupleMeta(generation=0, game_id=0, decision_idx=0, phase="move", side="p1")
+        with pytest.raises(Exception):
+            meta.generation = 1  # type: ignore
+
+    def test_training_tuple_frozen(self):
+        meta = TupleMeta(generation=0, game_id=0, decision_idx=0, phase="move", side="p1")
+        policy = SparsePolicy(indices=(0,), probs=(1.0,))
+        tt = TrainingTuple(beta=MagicMock(), value=0.5, policy=policy, z=1.0, meta=meta)
+        with pytest.raises(Exception):
+            tt.value = 0.0  # type: ignore
+        with pytest.raises(Exception):
+            tt.z = -1.0  # type: ignore

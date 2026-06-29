@@ -33,6 +33,7 @@ from search import (
     puct_scores,
 )
 from search.expansion import (
+    _MAX_FORCED_CHAIN,
     _cell_choices,
     _collapse_forced,
     _expand_chance_child,
@@ -1051,4 +1052,144 @@ class TestCollapseForced:
         # Falls back to the original handle/view
         assert result_handle == 42
         assert result_view is forced_view
+
+    def test_multi_step_chain_to_genuine_decision(self):
+        """Two forced decisions followed by a genuine decision with multiple legal actions."""
+        # First forced view: p1 has one legal switch
+        forced_view_1 = MagicMock()
+        forced_view_1.terminal = False
+        forced_view_1.phase = "forceSwitch"
+        forced_view_1.to_move = ["p1"]
+        forced_view_1.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        # Second forced view: p2 has one legal switch
+        forced_view_2 = MagicMock()
+        forced_view_2.terminal = False
+        forced_view_2.phase = "forceSwitch"
+        forced_view_2.to_move = ["p2"]
+        forced_view_2.legal = {
+            "p2": {"forceSwitch": [False, True], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        # Third view: genuine decision with multiple legal actions
+        genuine_view = MagicMock()
+        genuine_view.terminal = False
+        genuine_view.to_move = ["p1", "p2"]
+        genuine_view.phase = "move"
+        genuine_view.legal = {
+            "p1": {"active": [
+                {"moves": [
+                    {"id": "a", "pp": 10, "target": "normal"},
+                    {"id": "b", "pp": 10, "target": "self"},
+                ]},
+                {"moves": [{"id": "c", "pp": 10, "target": "normal"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+            "p2": {"active": [
+                {"moves": [{"id": "d", "pp": 10, "target": "normal"}]},
+                {"moves": [{"id": "e", "pp": 10, "target": "self"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+        }
+
+        mock_sim = MagicMock()
+        mock_sim.step.side_effect = [
+            MagicMock(child=50, view=forced_view_2),
+            MagicMock(child=60, view=genuine_view),
+        ]
+
+        result_handle, result_view = _collapse_forced(mock_sim, 42, forced_view_1)
+
+        assert result_handle == 60
+        assert result_view is genuine_view
+        assert mock_sim.step.call_count == 2
+
+    def test_max_forced_chain_cap(self):
+        """A chain of _MAX_FORCED_CHAIN+1 forced decisions stops at the cap."""
+        # All forced views are identical — always one legal action
+        forced_view = MagicMock()
+        forced_view.terminal = False
+        forced_view.phase = "forceSwitch"
+        forced_view.to_move = ["p1"]
+        forced_view.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        # Each step returns another forced view (infinite chain)
+        mock_sim = MagicMock()
+        call_count = [0]
+
+        def _step_returns_forced(*args, **kwargs):
+            call_count[0] += 1
+            new_view = MagicMock()
+            new_view.terminal = False
+            new_view.phase = "forceSwitch"
+            new_view.to_move = ["p1"]
+            new_view.legal = forced_view.legal
+            return MagicMock(child=100 + call_count[0], view=new_view)
+
+        mock_sim.step.side_effect = _step_returns_forced
+
+        result_handle, result_view = _collapse_forced(mock_sim, 42, forced_view)
+
+        # Should stop after _MAX_FORCED_CHAIN steps (not loop forever)
+        assert mock_sim.step.call_count == _MAX_FORCED_CHAIN
+        # Returns the last state reached
+        assert result_handle == 100 + _MAX_FORCED_CHAIN
+
+
+# ---------------------------------------------------------------------------
+# Gap 21: _expand_child_turn_node forced collapse updating leaf_value_p1
+# ---------------------------------------------------------------------------
+
+
+class TestExpandChildForcedCollapse:
+    """Test that _expand_child_turn_node updates leaf_value_p1 when forced chain ends at terminal."""
+
+    def test_forced_chain_to_terminal_updates_leaf_value(self):
+        """When forced collapse ends at terminal, outcome.leaf_value_p1 is updated."""
+        outcome = ChanceOutcome(handle=5, leaf_value_p1=0.5)
+
+        # sim.view returns a non-terminal forced view
+        forced_view = MagicMock()
+        forced_view.terminal = False
+        forced_view.to_move = ["p1"]
+        forced_view.phase = "forceSwitch"
+        forced_view.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        terminal_view = MagicMock()
+        terminal_view.terminal = True
+        terminal_view.to_move = []
+        terminal_view.utility = {"p1": -0.75}
+
+        mock_sim = MagicMock()
+        mock_sim.view.return_value = forced_view
+        mock_sim.step.return_value = MagicMock(child=77, view=terminal_view)
+
+        result = _expand_child_turn_node(outcome, mock_sim, MagicMock(), SearchConfig())
+
+        assert result is None
+        # leaf_value_p1 should be updated to the terminal utility, not the original 0.5
+        assert outcome.leaf_value_p1 == -0.75
+        assert outcome.node is None
 

@@ -17,11 +17,7 @@ from typing import Iterator, Protocol
 
 import numpy as np
 
-from action_space import (
-    action_to_choice_contextual,
-    forced_actions,
-    legal_mask,
-)
+from action_space import action_to_choice_contextual, legal_mask
 from cvpn import CVPN
 from encoder import encode
 from obs_bundle import ObsBundle
@@ -158,6 +154,76 @@ def _rng_seed(rng: random.Random) -> list[int]:
     return [rng.randint(0, 0xFFFF) for _ in range(4)]
 
 
+def _advance(
+    sim: SimClient, handle: int, choices: dict[str, str], seed: list[int]
+) -> tuple[int, StateView]:
+    """Step the battle forward and release the old handle.
+
+    Centralizes the step+release contract: callers never need to manage
+    handle lifecycle manually.  On SimError the exception propagates
+    *before* release, so the old handle stays valid for retry or cleanup.
+    """
+    res = sim.step(handle, choices, seed)
+    sim.release(handle)
+    return res.child, res.view
+
+
+def _is_forced(masks: dict[str, np.ndarray]) -> dict[str, int] | None:
+    """Return {side: sole_legal_idx} if every side has exactly one legal action.
+
+    Same semantics as action_space.forced_actions but operates on pre-computed
+    masks to avoid redundant legal_mask calls.
+    """
+    if not masks:
+        return None
+    out: dict[str, int] = {}
+    for s, m in masks.items():
+        if int(m.sum()) != 1:
+            return None
+        out[s] = int(np.argmax(m))
+    return out
+
+
+def _sample_and_step(
+    sim: SimClient,
+    handle: int,
+    view: StateView,
+    strategy: dict[str, dict[int, float]],
+    game_rng: random.Random,
+    temperature: float,
+) -> tuple[int, StateView] | None:
+    """Sample actions from sigma-bar and advance, retrying on mask/engine discrepancy.
+
+    Each retry resamples fresh from sigma-bar — the RNG naturally produces
+    different joints, so no per-side or per-joint blacklist is needed.
+    Mask/engine targeting gaps are rare (expansion handles the same
+    discrepancy by dropping the cell).
+
+    Returns (new_handle, new_view) on success, or None if all retries fail.
+    """
+    for _attempt in range(_MAX_STEP_RETRIES):
+        choices: dict[str, str] = {}
+        for side in view.to_move:
+            side_strategy = strategy.get(side, {})
+            if not side_strategy:
+                return None
+            action_idx = _sample_action(side_strategy, game_rng, temperature)
+            choices[side] = action_to_choice_contextual(
+                action_idx, view.legal.get(side)
+            )
+
+        step_seed = _rng_seed(game_rng)
+        try:
+            return _advance(sim, handle, choices, step_seed)
+        except SimError as e:
+            logger.debug(
+                "Step attempt %d: SimError=%s choices=%s",
+                _attempt, str(e), choices,
+            )
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Mutable buffer entry (z stamped after terminal)
 # ---------------------------------------------------------------------------
@@ -225,7 +291,7 @@ def run(
             handle, view = sim.new_battle(team_a, team_b, seed=battle_seed)
 
             while not view.terminal:
-                # Safety cap: abort if too many decisions
+                # --- Cap: abort runaway games ---
                 if decision_idx >= config.max_decisions:
                     logger.warning(
                         "Game %d aborted: exceeded max_decisions=%d",
@@ -236,53 +302,45 @@ def run(
                     sim.release(handle)
                     break
 
-                # Defensive edge: non-terminal with phase "none" / empty to_move
+                # --- Empty phase: non-terminal with no acting sides ---
                 if not view.to_move or view.phase == "none":
-                    step_seed = _rng_seed(game_rng)
-                    res = sim.step(handle, {}, seed=step_seed)
-                    sim.release(handle)
-                    handle, view = res.child, res.view
+                    handle, view = _advance(sim, handle, {}, _rng_seed(game_rng))
                     continue
 
-                # Forced-decision skip: no search, no CVPN, no tuple.
-                # Forced chains are handled by loop re-entry (see _collapse_forced
-                # for the search-side equivalent).
-                forced = forced_actions(view.legal, view.to_move, view.phase)
+                # Compute masks once for this decision point — used by the
+                # forced check and the buffering loop, avoiding redundant
+                # legal_mask calls.
+                masks = {
+                    s: legal_mask(view.legal.get(s), view.phase)
+                    for s in view.to_move
+                }
+
+                # --- Forced-decision skip ---
+                forced = _is_forced(masks)
                 if forced is not None:
                     choices = {
                         s: action_to_choice_contextual(idx, view.legal.get(s))
                         for s, idx in forced.items()
                     }
-                    step_seed = _rng_seed(game_rng)
-                    res = sim.step(handle, choices, seed=step_seed)
-                    sim.release(handle)
-                    handle, view = res.child, res.view
+                    handle, view = _advance(sim, handle, choices, _rng_seed(game_rng))
                     continue
 
-                # Genuine decision: run search
+                # --- Genuine decision: run search ---
                 result = search(
                     view, sim, net, from_handle=handle, config=config.search_config
                 )
 
                 # Buffer one tuple per side with >=2 legal actions
                 for side in view.to_move:
-                    mask = legal_mask(view.legal.get(side), view.phase)
-                    if mask.sum() < 2:
+                    if masks[side].sum() < 2:
                         continue
-
-                    # Encode the observation from this side's perspective
                     beta = encode(view, side)
-
-                    # Value from this side's perspective
                     value = result.value if side == "p1" else -result.value
-
-                    # Sparse policy from sigma-bar
                     side_strategy = result.strategy.get(side, {})
                     policy = SparsePolicy(
                         indices=tuple(side_strategy.keys()),
                         probs=tuple(side_strategy.values()),
                     )
-
                     meta = TupleMeta(
                         generation=config.generation,
                         game_id=game_id,
@@ -290,75 +348,16 @@ def run(
                         phase=view.phase,
                         side=side,
                     )
-
                     pending.append(
                         _PendingTuple(beta=beta, value=value, policy=policy, meta=meta)
                     )
 
-                # Sample actions for both sides and advance. Retry on SimError
-                # (mask/engine targeting discrepancy — search's expand_turn_node
-                # catches the same per-cell; some strategy actions may be invalid).
-                # Track failed action indices so retries sample different ones.
-                stepped = False
-                failed_actions: dict[str, set[int]] = {
-                    s: set() for s in view.to_move
-                }
-                for _attempt in range(_MAX_STEP_RETRIES):
-                    choices: dict[str, str] = {}
-                    sampled_indices: dict[str, int] = {}
-                    exhausted = False
-                    for side in view.to_move:
-                        side_strategy = result.strategy.get(side, {})
-                        # Exclude previously-failed actions
-                        filtered = {
-                            k: v
-                            for k, v in side_strategy.items()
-                            if k not in failed_actions[side]
-                        }
-                        if filtered:
-                            action_idx = _sample_action(
-                                filtered, game_rng, config.temperature
-                            )
-                        else:
-                            # All strategy actions exhausted; try legal mask
-                            mask = legal_mask(view.legal.get(side), view.phase)
-                            for bad in failed_actions[side]:
-                                if bad < len(mask):
-                                    mask[bad] = False
-                            legal_indices = np.flatnonzero(mask)
-                            if len(legal_indices) > 0:
-                                action_idx = int(game_rng.choice(legal_indices))
-                            else:
-                                # Every legal action for this side has already
-                                # failed — retrying cannot succeed.
-                                exhausted = True
-                                break
-                        sampled_indices[side] = action_idx
-                        choices[side] = action_to_choice_contextual(
-                            action_idx, view.legal.get(side)
-                        )
-
-                    if exhausted:
-                        break
-
-                    step_seed = _rng_seed(game_rng)
-                    try:
-                        res = sim.step(handle, choices, seed=step_seed)
-                        sim.release(handle)
-                        handle, view = res.child, res.view
-                        stepped = True
-                        break
-                    except SimError as e:
-                        logger.debug(
-                            "Decision %d attempt %d: SimError=%s choices=%s",
-                            decision_idx, _attempt, str(e), choices,
-                        )
-                        # Mark sampled actions as failed for next retry
-                        for side, idx in sampled_indices.items():
-                            failed_actions[side].add(idx)
-                        continue
-
-                if not stepped:
+                # --- Sample from sigma-bar and step (with retry) ---
+                advance_result = _sample_and_step(
+                    sim, handle, view, result.strategy,
+                    game_rng, config.temperature,
+                )
+                if advance_result is None:
                     logger.warning(
                         "Game %d aborted: failed to step after %d retries",
                         game_id,
@@ -368,6 +367,7 @@ def run(
                     sim.release(handle)
                     break
 
+                handle, view = advance_result
                 decision_idx += 1
 
             # Terminal reached: stamp z and yield all buffered tuples
@@ -382,10 +382,8 @@ def run(
                         z=z,
                         meta=pt.meta,
                     )
-                # Release terminal handle
                 sim.release(handle)
 
         except SimError as e:
             logger.warning("Game %d aborted due to SimError: %s", game_id, e)
-            # Discard all pending tuples for this game
             continue

@@ -17,7 +17,7 @@ from self_play import CurriculumMatchupSource
 
 def _with_moves(base: list[dict], moves_per_mon: list[list[str]]) -> list[dict]:
     """Attach a per-mon move list to a shared base definition."""
-    return [{**mon, "moves": moves} for mon, moves in zip(base, moves_per_mon)]
+    return [{**mon, "moves": moves} for mon, moves in zip(base, moves_per_mon, strict=True)]
 
 
 # ---------------------------------------------------------------------------

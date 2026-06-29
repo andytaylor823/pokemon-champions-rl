@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from action_space import action_to_choice_contextual, forced_actions, legal_mask
+from action_space import action_to_choice_contextual, forced_actions
 from encoder import encode
 from obs_bundle import ObsBundle, collate_obs_bundles
 from search.cfr import regret_matching

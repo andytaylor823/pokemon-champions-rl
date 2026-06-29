@@ -22,6 +22,7 @@ from self_play import (
     TrainingTuple,
     TupleMeta,
     _PendingTuple,
+    _is_forced,
     _sample_action,
     run,
 )
@@ -213,9 +214,8 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_max_decisions_aborts_game(self, mock_mask, _mock_forced, mock_encode, mock_search):
+    def test_max_decisions_aborts_game(self, mock_mask, mock_encode, mock_search):
         """Exceeding max_decisions should discard all tuples for that game."""
         # Configure mask to always have multiple legal actions (never forced)
         mask_arr = np.zeros(10, dtype=bool)
@@ -255,9 +255,8 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_z_stamping_on_terminal(self, mock_mask, _mock_forced, mock_encode, mock_search):
+    def test_z_stamping_on_terminal(self, mock_mask, mock_encode, mock_search):
         """Tuples should be stamped with the correct z from utility at terminal."""
         # First call: multiple legal (not forced), triggers search
         mask_multi = np.zeros(10, dtype=bool)
@@ -306,9 +305,8 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_value_negated_for_p2(self, mock_mask, _mock_forced, mock_encode, mock_search):
+    def test_value_negated_for_p2(self, mock_mask, mock_encode, mock_search):
         """p2's value target should be the negation of p1's search value."""
         mask_multi = np.zeros(10, dtype=bool)
         mask_multi[0] = True
@@ -349,11 +347,13 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions")
-    def test_forced_decision_emits_no_tuples(self, mock_forced, mock_encode, mock_search):
+    @patch("self_play.legal_mask")
+    def test_forced_decision_emits_no_tuples(self, mock_mask, mock_encode, mock_search):
         """Forced decisions should produce zero tuples and skip search."""
-        # forced_actions returns forced indices on first call, then None (terminal)
-        mock_forced.return_value = {"p1": 1, "p2": 1}
+        # Single legal action at index 1 → _is_forced detects forced decision
+        forced_mask = np.zeros(5, dtype=bool)
+        forced_mask[1] = True
+        mock_mask.return_value = forced_mask
 
         sim = MagicMock()
         # Initial: forced decision
@@ -383,13 +383,9 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions")
     @patch("self_play.legal_mask")
-    def test_unilateral_emits_one_tuple(self, mock_mask, mock_forced, mock_encode, mock_search):
+    def test_unilateral_emits_one_tuple(self, mock_mask, mock_encode, mock_search):
         """A unilateral decision (one side forced, one choosing) emits 1 tuple."""
-        # Not forced overall (p1 has a genuine choice)
-        mock_forced.return_value = None
-
         # Use distinct sentinel objects to differentiate p1 vs p2 requests
         p1_request = {"_side": "p1"}
         p2_request = {"_side": "p2"}
@@ -436,9 +432,8 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_sim_error_discards_game(self, mock_mask, _mock_forced, mock_encode, mock_search):
+    def test_sim_error_discards_game(self, mock_mask, mock_encode, mock_search):
         """SimError mid-game should discard all tuples and continue."""
         from sim_client import SimError
 
@@ -454,9 +449,8 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_multiple_games(self, mock_mask, _mock_forced, mock_encode, mock_search):
+    def test_multiple_games(self, mock_mask, mock_encode, mock_search):
         """Running multiple games should yield tuples from all of them."""
         mask_multi = np.zeros(10, dtype=bool)
         mask_multi[0] = True
@@ -498,9 +492,8 @@ class TestRunGenerator:
 
     @patch("self_play.search")
     @patch("self_play.encode")
-    @patch("self_play.forced_actions", return_value=None)
     @patch("self_play.legal_mask")
-    def test_meta_fields_populated(self, mock_mask, _mock_forced, mock_encode, mock_search):
+    def test_meta_fields_populated(self, mock_mask, mock_encode, mock_search):
         """TupleMeta should contain correct generation, game_id, decision_idx, phase, side."""
         mask_multi = np.zeros(10, dtype=bool)
         mask_multi[0] = True
@@ -540,3 +533,113 @@ class TestRunGenerator:
             assert t.meta.decision_idx == 0
             assert t.meta.phase == "move"
             assert t.meta.side in ("p1", "p2")
+
+    @patch("self_play.search")
+    @patch("self_play.encode")
+    @patch("self_play.legal_mask")
+    def test_retry_does_not_blacklist_per_side(self, mock_mask, mock_encode, mock_search):
+        """Regression: a joint SimError must not blacklist individual per-side actions.
+
+        Before the fix, a failing joint (A, B) would blacklist A for p1 AND B
+        for p2 independently.  If p1 had only action A in sigma-bar, p1's action
+        was incorrectly exhausted even though A was fine — only the joint was bad.
+        The fix resamples fresh from sigma-bar each attempt instead of per-side
+        blacklisting, so p1's action A remains available on retry.
+        """
+        from sim_client import SimError
+
+        mask_multi = np.zeros(10, dtype=bool)
+        mask_multi[0] = True
+        mask_multi[1] = True
+        mock_mask.return_value = mask_multi
+
+        # p1 has ONE action (idx=0), p2 has TWO (idx=0, idx=1).
+        # First joint (0, <any>) fails, but p1's action 0 must survive for retry.
+        mock_result = MagicMock()
+        mock_result.strategy = {"p1": {0: 1.0}, "p2": {0: 0.5, 1: 0.5}}
+        mock_result.value = 0.0
+        mock_search.return_value = mock_result
+        mock_encode.return_value = MagicMock()
+
+        sim = MagicMock()
+        initial_view = _make_view(
+            phase="move", to_move=["p1", "p2"],
+            legal={"p1": {}, "p2": {}}, terminal=False,
+        )
+        terminal_view = _make_view(
+            phase="terminal", to_move=[], terminal=True,
+            utility={"p1": 1.0, "p2": -1.0},
+        )
+        sim.new_battle.return_value = (1, initial_view)
+
+        # First step raises SimError; subsequent steps succeed (terminal).
+        step_ok = MagicMock()
+        step_ok.child = 2
+        step_ok.view = terminal_view
+        sim.step.side_effect = [SimError("bad joint"), step_ok]
+
+        source = CurriculumMatchupSource([{"species": "A"}], [{"species": "B"}])
+        config = SelfPlayConfig(num_games=1, master_seed=1)
+
+        tuples = list(run(MagicMock(), source, sim, config))
+
+        # Game should NOT abort — the retry succeeds after the first failure.
+        assert len(tuples) == 2
+        assert sim.step.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: _is_forced helper
+# ---------------------------------------------------------------------------
+
+
+class TestIsForced:
+    """Tests for the inline forced-decision predicate using pre-computed masks."""
+
+    def test_empty_masks_returns_none(self):
+        """No masks (empty to_move) → not forced."""
+        assert _is_forced({}) is None
+
+    def test_all_single_action(self):
+        """Both sides have exactly one legal action → forced."""
+        masks = {
+            "p1": np.array([False, True, False]),
+            "p2": np.array([False, False, True]),
+        }
+        result = _is_forced(masks)
+        assert result == {"p1": 1, "p2": 2}
+
+    def test_one_side_multiple_actions(self):
+        """One side has multiple legal actions → not forced."""
+        masks = {
+            "p1": np.array([True, True, False]),
+            "p2": np.array([False, True, False]),
+        }
+        assert _is_forced(masks) is None
+
+    def test_unilateral_single_action(self):
+        """Single side with one legal action → forced."""
+        masks = {"p1": np.array([False, False, True])}
+        result = _is_forced(masks)
+        assert result == {"p1": 2}
+
+
+# ---------------------------------------------------------------------------
+# Tests: empty to_move guard in search()
+# ---------------------------------------------------------------------------
+
+
+class TestSearchEmptyToMoveGuard:
+    """search() must raise ValueError when called with empty to_move."""
+
+    def test_raises_on_empty_to_move(self):
+        """Empty to_move is not a decision point — should raise immediately."""
+        from search import search, SearchConfig
+
+        mock_view = MagicMock()
+        mock_view.phase = "move"
+        mock_view.to_move = []
+        mock_view.legal = {}
+
+        with pytest.raises(ValueError, match="empty to_move"):
+            search(mock_view, MagicMock(), MagicMock(), from_handle=99, config=SearchConfig())

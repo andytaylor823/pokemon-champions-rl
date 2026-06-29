@@ -206,6 +206,15 @@ def _sample_and_step(
         for side in view.to_move:
             side_strategy = strategy.get(side, {})
             if not side_strategy:
+                # Search returned no actions for an acting side — almost always an
+                # empty legal mask (e.g. a mask-construction gap), not a sampling
+                # failure. Logged distinctly so it is not misread as a step retry.
+                logger.warning(
+                    "No strategy for acting side %s at %s decision — search "
+                    "returned an empty action set (likely an empty legal mask); "
+                    "cannot sample. Aborting before any step attempt.",
+                    side, view.phase,
+                )
                 return None
             action_idx = _sample_action(side_strategy, game_rng, temperature)
             choices[side] = action_to_choice_contextual(
@@ -221,6 +230,10 @@ def _sample_and_step(
                 _attempt, str(e), choices,
             )
 
+    logger.warning(
+        "Exhausted %d resample attempts without an engine-legal joint at %s decision.",
+        _MAX_STEP_RETRIES, view.phase,
+    )
     return None
 
 
@@ -359,10 +372,11 @@ def run(
                     game_rng, config.temperature,
                 )
                 if advance_result is None:
+                    # _sample_and_step has already logged the specific cause
+                    # (empty strategy vs. exhausted resamples).
                     logger.warning(
-                        "Game %d aborted: failed to step after %d retries",
+                        "Game %d aborted: could not advance from a genuine decision.",
                         game_id,
-                        _MAX_STEP_RETRIES,
                     )
                     aborted = True
                     sim.release(handle)

@@ -16,10 +16,16 @@ Per-slot actions during move phase (ACTIONS_PER_SLOT = 27):
   [25, 26)  — switch to bench position 2 (team slot 4)
   [26]      — pass (empty slot, no action required)
 
-Showdown targeting conventions:
-  - target  1 = opponent slot 1 (left foe)
-  - target  2 = opponent slot 2 (right foe)
-  - target -1 = ally
+Showdown targeting conventions (slot-dependent for allies):
+  - target  1 = opponent slot 1 (left foe)  — same from both slots
+  - target  2 = opponent slot 2 (right foe) — same from both slots
+  - target -1 = ally from SLOT 1's perspective (i.e. slot 0)
+  - target -2 = ally from SLOT 0's perspective (i.e. slot 1)
+
+Our canonical per-slot space always uses -1 to mean "ally" regardless of slot.
+The slot-specific Showdown target is resolved when emitting a choice string
+(see _canonical_to_showdown_target / _showdown_to_canonical_target).
+
   For spread/self-targeting moves, only one target is legal (mask handles it).
 """
 
@@ -94,6 +100,31 @@ _SWITCH_INDEX_TO_BENCH: dict[int, int] = {
     NUM_MOVES * NUM_TARGETS * 2 + (pos - 1): pos for pos in (1, 2)
 }
 
+# Showdown ally-target numbers differ by active slot position:
+#   Slot 0 targets its ally (slot 1) with -2
+#   Slot 1 targets its ally (slot 0) with -1
+_ALLY_SHOWDOWN_TARGET: dict[int, int] = {0: -2, 1: -1}
+
+# Move target types that do NOT accept an explicit target in the choice string
+_NO_TARGET_TYPES = frozenset(
+    {"allAdjacentFoes", "self", "allySide", "foeSide", "all", "allAdjacent",
+     "scripted", "randomNormal", "allies", "allyTeam"}
+)
+
+
+def _canonical_to_showdown_target(canonical_target: int, slot_pos: int) -> int:
+    """Translate canonical target (-1 = ally) to Showdown's slot-specific target."""
+    if canonical_target == -1:
+        return _ALLY_SHOWDOWN_TARGET[slot_pos]
+    return canonical_target
+
+
+def _showdown_to_canonical_target(showdown_target: int, slot_pos: int) -> int:
+    """Translate Showdown's slot-specific target back to canonical (-1 = ally)."""
+    if showdown_target == _ALLY_SHOWDOWN_TARGET.get(slot_pos):
+        return -1
+    return showdown_target
+
 
 # --- Team preview helpers -----------------------------------------------------
 
@@ -162,17 +193,28 @@ def index_to_choice_string(action_idx: int) -> str:
     slot1_idx = joint_idx // ACTIONS_PER_SLOT
     slot2_idx = joint_idx % ACTIONS_PER_SLOT
 
-    slot1_str = _slot_action_to_choice(slot1_idx)
-    slot2_str = _slot_action_to_choice(slot2_idx)
+    slot1_str = _slot_action_to_choice(slot1_idx, slot_pos=0)
+    slot2_str = _slot_action_to_choice(slot2_idx, slot_pos=1)
 
-    # Omit pass slots — Showdown expects only one choice when a slot is empty
+    # Showdown assigns comma-separated parts positionally: part 0 → slot 0, etc.
+    # When slot 0 is pass but slot 1 acts, we MUST send "pass, <slot1_choice>"
+    # so Showdown doesn't misattribute the choice to slot 0.
     if slot1_str and slot2_str:
         return f"{slot1_str}, {slot2_str}"
-    return slot1_str or slot2_str or ""
+    if slot1_str:
+        return slot1_str
+    if slot2_str:
+        return f"pass, {slot2_str}"
+    return "pass"
 
 
-def _slot_action_to_choice(slot_idx: int) -> str:
+def _slot_action_to_choice(slot_idx: int, slot_pos: int = 1) -> str:
     """Convert a per-slot action index to its Showdown choice string fragment.
+
+    Args:
+        slot_idx: Per-slot action index [0, 27).
+        slot_pos: Active slot position (0 or 1) — needed to resolve the
+            ally target number (slot 0 → -2, slot 1 → -1).
 
     Returns empty string for a pass action.
     """
@@ -181,10 +223,10 @@ def _slot_action_to_choice(slot_idx: int) -> str:
         return ""
     if isinstance(action, SwitchAction):
         return f"switch {action.team_slot}"
-    # MoveAction: "move N T [mega]" where N is 1-indexed
     move_num = action.move_idx + 1
     mega_str = " mega" if action.mega else ""
-    return f"move {move_num} {action.target}{mega_str}"
+    showdown_target = _canonical_to_showdown_target(action.target, slot_pos)
+    return f"move {move_num} {showdown_target}{mega_str}"
 
 
 def choice_string_to_index(choice: str) -> int:
@@ -201,19 +243,25 @@ def choice_string_to_index(choice: str) -> int:
     # Move phase: "slot1_choice, slot2_choice" or single choice (pass in other slot)
     parts = choice.split(", ")
     if len(parts) == 2:
-        slot1_idx = _choice_to_slot_action(parts[0])
-        slot2_idx = _choice_to_slot_action(parts[1])
+        slot1_idx = _choice_to_slot_action(parts[0], slot_pos=0)
+        slot2_idx = _choice_to_slot_action(parts[1], slot_pos=1)
     elif len(parts) == 1:
         # Single slot choice — other slot is pass
-        slot1_idx = _choice_to_slot_action(parts[0])
+        slot1_idx = _choice_to_slot_action(parts[0], slot_pos=0)
         slot2_idx = PASS_INDEX
     else:
         raise ValueError(f"Expected joint choice 'X, Y' or single choice, got: {choice!r}")
     return MOVE_PHASE_OFFSET + slot1_idx * ACTIONS_PER_SLOT + slot2_idx
 
 
-def _choice_to_slot_action(fragment: str) -> int:
-    """Parse a single slot's choice string fragment into its per-slot index."""
+def _choice_to_slot_action(fragment: str, slot_pos: int = 1) -> int:
+    """Parse a single slot's choice string fragment into its per-slot index.
+
+    Args:
+        fragment: Showdown choice string fragment (e.g. "move 1 2", "switch 3").
+        slot_pos: Active slot position (0 or 1) — needed to map Showdown's
+            slot-specific ally targets back to canonical -1.
+    """
     fragment = fragment.strip()
     if not fragment or fragment == "pass":
         return PASS_INDEX
@@ -227,7 +275,8 @@ def _choice_to_slot_action(fragment: str) -> int:
     if parts[0] != "move":
         raise ValueError(f"Expected 'move ...' or 'switch ...', got: {fragment!r}")
     move_num = int(parts[1])  # 1-indexed
-    target = int(parts[2]) if len(parts) > 2 and parts[2] != "mega" else 1
+    raw_target = int(parts[2]) if len(parts) > 2 and parts[2] != "mega" else 1
+    target = _showdown_to_canonical_target(raw_target, slot_pos)
     mega = "mega" in parts[2:]
     return _slot_action_to_index(move_num - 1, target, mega, None)
 
@@ -284,18 +333,34 @@ def _slot_legal_actions(active: list, side_pokemon: list, slot_idx: int, request
     # Handle force switch: only switches are legal
     force_switch = request.get("forceSwitch", [])
     if force_switch and slot_idx < len(force_switch) and force_switch[slot_idx]:
-        return _legal_switches(side_pokemon)
+        # No bench Pokemon available → pass (slot stays empty; game may be terminal)
+        return _legal_switches(side_pokemon) or [PASS_INDEX]
 
     # If this slot doesn't exist (one mon left), it is a pass
     if slot_idx >= len(active):
         return [PASS_INDEX]
 
+    # Fainted active slot with no bench replacement: Showdown still lists it in
+    # `active` with full move data, but rejects any choice for it.  Treat as pass.
+    if slot_idx < len(side_pokemon):
+        slot_condition = side_pokemon[slot_idx].get("condition", "")
+        if slot_condition.endswith(" fnt"):
+            return [PASS_INDEX]
+
     slot_data = active[slot_idx]
     moves = slot_data.get("moves", [])
     can_mega = slot_data.get("canMegaEvo", False)
+    # Per-slot trapping (e.g. charging a multi-turn move like Solar Beam)
+    slot_trapped = slot_data.get("trapped", False)
 
-    # Determine which moves are usable
     for move_idx, move in enumerate(moves):
+        # Charging moves have no pp/target fields — always legal, single canonical target
+        is_charging = "pp" not in move
+        if is_charging:
+            idx = _slot_action_to_index(move_idx, 1, mega=False, switch_pos=None)
+            legal.append(idx)
+            continue
+
         if move.get("disabled") or move.get("pp", 0) <= 0:
             continue
         target_type = move.get("target", "normal")
@@ -307,8 +372,8 @@ def _slot_legal_actions(active: list, side_pokemon: list, slot_idx: int, request
                 idx_mega = _slot_action_to_index(move_idx, target, mega=True, switch_pos=None)
                 legal.append(idx_mega)
 
-    # Add legal switches
-    if not request.get("trapped"):
+    # Add legal switches (blocked by per-slot OR top-level trapping)
+    if not slot_trapped and not request.get("trapped"):
         legal.extend(_legal_switches(side_pokemon))
 
     return legal
@@ -367,3 +432,68 @@ def _valid_targets_for(target_type: str) -> list[int]:
         return _TARGET_TYPE_MAP[target_type]
     except KeyError:
         raise ValueError(f"Unknown Showdown target type: {target_type!r}") from None
+
+
+# ---------------------------------------------------------------------------
+# Context-aware choice string builder (uses legal request for target stripping)
+# ---------------------------------------------------------------------------
+
+
+def _slot_choice_contextual(
+    action: SlotAction, slot_moves: list[dict] | None, slot_pos: int
+) -> str:
+    """Build a Showdown choice fragment, stripping target if the move doesn't accept one.
+
+    Combines slot-aware ally targeting with target-type stripping for spread/self moves.
+    """
+    if isinstance(action, PassAction):
+        return ""
+    if isinstance(action, SwitchAction):
+        return f"switch {action.team_slot}"
+
+    move_num = action.move_idx + 1
+    mega_str = " mega" if action.mega else ""
+
+    if slot_moves and action.move_idx < len(slot_moves):
+        move_data = slot_moves[action.move_idx]
+        # Charging moves have no target field — emit bare "move N"
+        if "target" not in move_data:
+            return f"move {move_num}{mega_str}"
+        move_target_type = move_data.get("target", "normal")
+        if move_target_type in _NO_TARGET_TYPES:
+            return f"move {move_num}{mega_str}"
+
+    showdown_target = _canonical_to_showdown_target(action.target, slot_pos)
+    return f"move {move_num} {showdown_target}{mega_str}"
+
+
+def action_to_choice_contextual(action_idx: int, legal_request: dict | None) -> str:
+    """Convert a canonical action index to a valid Showdown choice string.
+
+    Uses the legal request to strip targets for spread/self/charging moves and
+    to resolve slot-specific ally target numbers.
+    """
+    if action_idx < TEAM_PREVIEW_COUNT:
+        return index_to_choice_string(action_idx)
+
+    joint_idx = action_idx - MOVE_PHASE_OFFSET
+    slot1_idx = joint_idx // ACTIONS_PER_SLOT
+    slot2_idx = joint_idx % ACTIONS_PER_SLOT
+
+    slot1_action = _index_to_slot_action(slot1_idx)
+    slot2_action = _index_to_slot_action(slot2_idx)
+
+    active = (legal_request or {}).get("active", [])
+    slot1_moves = active[0].get("moves", []) if len(active) > 0 else []
+    slot2_moves = active[1].get("moves", []) if len(active) > 1 else []
+
+    slot1_str = _slot_choice_contextual(slot1_action, slot1_moves, slot_pos=0)
+    slot2_str = _slot_choice_contextual(slot2_action, slot2_moves, slot_pos=1)
+
+    if slot1_str and slot2_str:
+        return f"{slot1_str}, {slot2_str}"
+    if slot1_str:
+        return slot1_str
+    if slot2_str:
+        return f"pass, {slot2_str}"
+    return "pass"

@@ -28,7 +28,11 @@ class TestSingleLegalMoveSkip:
     """Test that _single_move_result / search returns immediately when only one action is legal."""
 
     def test_single_action_both_sides(self):
-        """When both sides have exactly one legal action, skip search entirely."""
+        """When both sides have exactly one legal action, skip search entirely.
+
+        No CVPN forward, no search session — forced decisions carry no strategic
+        content (self-play.md §2.2). Value is 0.0 (not a CVPN eval).
+        """
         mock_view = MagicMock()
         mock_view.phase = "forceSwitch"
         mock_view.to_move = ["p1", "p2"]
@@ -45,19 +49,18 @@ class TestSingleLegalMoveSkip:
 
         mock_sim = MagicMock()
         mock_net = MagicMock()
-        mock_value = torch.tensor(0.3)
-        mock_net.return_value = (torch.zeros(as_mod.A), mock_value)
 
-        with patch("search.expansion.encode") as mock_encode:
-            mock_encode.return_value = MagicMock()
-            result = search(mock_view, mock_sim, mock_net, from_handle=99, config=SearchConfig())
+        result = search(mock_view, mock_sim, mock_net, from_handle=99, config=SearchConfig())
 
         assert isinstance(result, SearchResult)
         for s in ["p1", "p2"]:
             assert len(result.strategy[s]) == 1
             assert next(iter(result.strategy[s].values())) == 1.0
-        assert abs(result.value - 0.3) < 1e-5
+        # Forced decisions return value=0.0 — no CVPN call
+        assert result.value == 0.0
         mock_sim.open_search.assert_not_called()
+        # CVPN should never be called for forced decisions
+        mock_net.assert_not_called()
 
     def test_multi_action_returns_none(self):
         """When a side has multiple legal actions, _single_move_result returns None."""
@@ -82,8 +85,7 @@ class TestSingleLegalMoveSkip:
             ]}},
         }
 
-        mock_net = MagicMock()
-        result = _single_move_result(mock_view, mock_net)
+        result = _single_move_result(mock_view)
         assert result is None
 
     def test_unilateral_single_action(self):
@@ -98,16 +100,13 @@ class TestSingleLegalMoveSkip:
             ]}},
         }
 
-        mock_net = MagicMock()
-        mock_net.return_value = (torch.zeros(as_mod.A), torch.tensor(0.5))
-
-        with patch("search.expansion.encode", return_value=MagicMock()):
-            result = _single_move_result(mock_view, mock_net)
+        result = _single_move_result(mock_view)
 
         assert result is not None
         assert "p1" in result.strategy
         assert len(result.strategy["p1"]) == 1
         assert next(iter(result.strategy["p1"].values())) == 1.0
+        assert result.value == 0.0
 
 
 # ---------------------------------------------------------------------------

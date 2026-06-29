@@ -261,23 +261,19 @@ CFR improvement operator (**bootstrapping**).
 
 ## 8. Adaptive compute
 
-- **Single-legal-move skip (build now).** If a side's legal mask has exactly one legal joint
-  action, fix it without searching; if both sides do, return immediately with mass-1.0 average
-  strategy (value from a single CVPN evaluation if a training target is needed). Composes with
-  the planned action-space canonicalization (`repo-architecture.md` §6): the double-faint
-  "bring both back" case collapses to one canonical action and is auto-skipped.
-  > **Upgrade flag — forced-node full collapse (from the SelfPlay grilling; `self-play.md` §2.2,
-  > §11; vibes 8.7).** The SelfPlay loop never calls `search()` on a fully-forced decision — it
-  > plays the forced action directly with **no CVPN eval and no tuple**. The same principle should
-  > hold *inside* the tree: a forced node (every acting side has one legal action) carries no
-  > strategic choice and its value is fully determined by its successors, so it should be
-  > **collapsed** — `expansion.py` should step transparently through the forced action (resolving
-  > any chance) to the next genuine decision / chance / terminal and only CVPN-evaluate there,
-  > rather than instantiating a degenerate decision node. Correspondingly, `core.py`
-  > `_single_move_result` should not call `cvpn_value` when no value is needed. **Firm preference.**
-  > Fallback (a known code smell, acceptable only if the in-tree collapse is too invasive for the
-  > first build): keep degenerate nodes but skip their CVPN/CFR cost and emit nothing. See open
-  > question §12.6.
+- **Single-legal-move skip + forced-node collapse (implemented).** If a side's legal mask has
+  exactly one legal joint action, fix it without searching; if both sides do, return immediately
+  with mass-1.0 average strategy and **value = 0.0** (no CVPN evaluation — forced decisions carry
+  no strategic content; `self-play.md` §2.2). **In-tree collapse** is also implemented: when
+  PUCT expansion encounters a forced node (every acting side has one legal action), `expansion.py`
+  steps transparently through the forced action(s) — resolving any chance — to the next genuine
+  decision / chance / terminal, and only CVPN-evaluates there. Chains of forced decisions (e.g.
+  multi-faint forced switches) are collapsed iteratively. No degenerate decision nodes, no wasted
+  CVPN forwards, no meaningless regret tables. Implementation:
+  - `core.py` `_single_move_result` returns `value=0.0` (no `net` parameter, no CVPN call).
+  - `expansion.py` `_forced_view_choices` detects forced states; `_collapse_forced` chains through
+    them. Called in `expand_turn_node` (grid cell evaluation), `_expand_chance_child` (widening),
+    and `_expand_child_turn_node` (deepening).
 - **All other early-stopping is DEFERRED** — including an average-strategy-convergence early
   stop (abort once σ̄ stops changing between CFR+ passes, KL < ε; the GT-CFR analogue of Lc0's
   smart pruning) and any dynamic per-turn time budget. Defer until search cost is a measured
@@ -373,11 +369,10 @@ All deferred deliberately; none blocks Phase 1.
    audit searches, or adapting `k` to how sharp/flat the prior is (vibes 9.7).
 5. **Budgets** — `expansion_budget`, `cfr_iters_per_expansion`, `c_puct`, `k`, `K` are all
    empirical; the values here are starting guesses, not commitments (vibes 9.2, 9.8, 9.10).
-6. **Forced-node collapse** — fully skip degenerate decision nodes throughout the tree (no CVPN,
-   no regret tables), not just the root single-legal-move skip. Expansion should step through a
-   forced node to the next genuine decision/chance/terminal and CVPN-evaluate only there;
-   `_single_move_result` should not call `cvpn_value` when no value is needed. Firm preference from
-   the SelfPlay grilling (`self-play.md` §2.2, §11; vibes 8.7); see the upgrade flag in §8.
+6. ~~**Forced-node collapse**~~ — **Resolved.** Forced decisions are now fully collapsed throughout
+   the tree: `_single_move_result` returns `value=0.0` with no CVPN call; `_collapse_forced` in
+   `expansion.py` steps transparently through forced chains during expansion (grid eval, widening,
+   deepening). No degenerate decision nodes are created. See §8.
 
 ## 13. Exit criteria for Phase 1 (what "done" means)
 

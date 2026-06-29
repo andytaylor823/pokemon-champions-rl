@@ -34,8 +34,10 @@ from search import (
 )
 from search.expansion import (
     _cell_choices,
+    _collapse_forced,
     _expand_chance_child,
     _expand_child_turn_node,
+    _forced_view_choices,
     _generate_seed,
     _terminal_utility_p1,
     cvpn_value,
@@ -263,7 +265,7 @@ class TestCellChoices:
             "p2": InfoSet.from_actions([3, 7], np.array([0.5, 0.5])),
         }
 
-        with patch("search.expansion.index_to_choice_string", side_effect=lambda x: f"choice_{x}"):
+        with patch("search.expansion.action_to_choice_contextual", side_effect=lambda x, _req: f"choice_{x}"):
             choices = _cell_choices(node, 0, 1)  # p1 action index 0 -> action 5, p2 index 1 -> action 7
 
         assert "p1" in choices
@@ -280,7 +282,7 @@ class TestCellChoices:
             "p2": InfoSet.noop(),
         }
 
-        with patch("search.expansion.index_to_choice_string", side_effect=lambda x: f"choice_{x}"):
+        with patch("search.expansion.action_to_choice_contextual", side_effect=lambda x, _req: f"choice_{x}"):
             choices = _cell_choices(node, 0, 0)
 
         assert "p1" in choices
@@ -339,7 +341,7 @@ class TestExpandChanceChild:
         mock_sim = MagicMock()
         mock_sim.step.side_effect = SimError("bad choice")
 
-        with patch("search.expansion.index_to_choice_string", return_value="move 1"):
+        with patch("search.expansion.action_to_choice_contextual", return_value="move 1"):
             _expand_chance_child(node, (0, 0), mock_sim, MagicMock(), config)
 
         assert len(node.grid[(0, 0)].children) == 0
@@ -360,7 +362,7 @@ class TestExpandChanceChild:
             view=MagicMock(terminal=True, utility={"p1": -0.5}), child=99,
         )
 
-        with patch("search.expansion.index_to_choice_string", return_value="move 1"):
+        with patch("search.expansion.action_to_choice_contextual", return_value="move 1"):
             _expand_chance_child(node, (0, 0), mock_sim, MagicMock(), config)
 
         assert len(node.grid[(0, 0)].children) == 1
@@ -383,7 +385,7 @@ class TestExpandChanceChild:
         )
         mock_net = MagicMock()
 
-        with patch("search.expansion.index_to_choice_string", return_value="move 1"), \
+        with patch("search.expansion.action_to_choice_contextual", return_value="move 1"), \
              patch("search.expansion.cvpn_value", return_value=0.33):
             _expand_chance_child(node, (0, 0), mock_sim, mock_net, config)
 
@@ -901,3 +903,246 @@ class TestSparseGrid:
 
         sigma_bar_p1 = extract_average_strategy(node, "p1")
         assert abs(sum(sigma_bar_p1.values()) - 1.0) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# _forced_view_choices (forced-node collapse)
+# ---------------------------------------------------------------------------
+
+
+class TestForcedViewChoices:
+    """Test the forced-decision detection helper."""
+
+    def test_terminal_returns_none(self):
+        """Terminal view is never forced."""
+        view = MagicMock()
+        view.terminal = True
+        assert _forced_view_choices(view) is None
+
+    def test_empty_to_move_returns_none(self):
+        """No acting sides means not forced."""
+        view = MagicMock()
+        view.terminal = False
+        view.to_move = []
+        assert _forced_view_choices(view) is None
+
+    def test_non_list_to_move_returns_none(self):
+        """Non-list to_move (e.g. unconfigured MagicMock) returns None safely."""
+        view = MagicMock()
+        view.terminal = False
+        # to_move is a MagicMock (not a list) — should not crash
+        assert _forced_view_choices(view) is None
+
+    def test_single_legal_action_both_sides(self):
+        """Both sides have exactly one legal action -> returns forced choices."""
+        view = MagicMock()
+        view.terminal = False
+        view.phase = "forceSwitch"
+        view.to_move = ["p1", "p2"]
+        view.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+            "p2": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "0 fnt"}, {"condition": "120/120"},
+            ]}},
+        }
+
+        result = _forced_view_choices(view)
+        assert result is not None
+        assert "p1" in result
+        assert "p2" in result
+
+    def test_multi_legal_action_returns_none(self):
+        """One side has multiple legal actions -> not forced."""
+        view = MagicMock()
+        view.terminal = False
+        view.phase = "move"
+        view.to_move = ["p1", "p2"]
+        view.legal = {
+            "p1": {"active": [
+                {"moves": [{"id": "thunderbolt", "pp": 10, "target": "normal"}, {"id": "protect", "pp": 10, "target": "self"}]},
+                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+            "p2": {"active": [
+                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
+                {"moves": [{"id": "protect", "pp": 10, "target": "self"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+        }
+        assert _forced_view_choices(view) is None
+
+    def test_unilateral_single_action(self):
+        """Only one side acting with one legal action -> forced."""
+        view = MagicMock()
+        view.terminal = False
+        view.phase = "forceSwitch"
+        view.to_move = ["p1"]
+        view.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        result = _forced_view_choices(view)
+        assert result is not None
+        assert "p1" in result
+
+
+# ---------------------------------------------------------------------------
+# _collapse_forced (forced-node collapse)
+# ---------------------------------------------------------------------------
+
+
+class TestCollapseForced:
+    """Test the forced-decision chain collapse helper."""
+
+    def test_genuine_decision_returns_immediately(self):
+        """Non-forced view is returned as-is without stepping."""
+        view = MagicMock()
+        view.terminal = False
+        view.phase = "move"
+        view.to_move = ["p1", "p2"]
+        view.legal = {
+            "p1": {"active": [
+                {"moves": [{"id": "thunderbolt", "pp": 10, "target": "normal"}, {"id": "protect", "pp": 10, "target": "self"}]},
+                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+            "p2": {"active": [
+                {"moves": [{"id": "flamethrower", "pp": 10, "target": "normal"}]},
+                {"moves": [{"id": "protect", "pp": 10, "target": "self"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+        }
+
+        mock_sim = MagicMock()
+        result_handle, result_view = _collapse_forced(mock_sim, 42, view)
+
+        assert result_handle == 42
+        assert result_view is view
+        mock_sim.step.assert_not_called()
+
+    def test_terminal_returns_immediately(self):
+        """Terminal view is returned as-is without stepping."""
+        view = MagicMock()
+        view.terminal = True
+        mock_sim = MagicMock()
+
+        result_handle, result_view = _collapse_forced(mock_sim, 42, view)
+        assert result_handle == 42
+        assert result_view is view
+        mock_sim.step.assert_not_called()
+
+    def test_single_forced_step(self):
+        """One forced decision is collapsed to the next genuine decision."""
+        forced_view = MagicMock()
+        forced_view.terminal = False
+        forced_view.phase = "forceSwitch"
+        forced_view.to_move = ["p1"]
+        forced_view.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        # After stepping the forced decision, we reach a genuine move phase
+        genuine_view = MagicMock()
+        genuine_view.terminal = False
+        genuine_view.to_move = ["p1", "p2"]
+        genuine_view.phase = "move"
+        genuine_view.legal = {
+            "p1": {"active": [
+                {"moves": [{"id": "a", "pp": 10, "target": "normal"}, {"id": "b", "pp": 10, "target": "self"}]},
+                {"moves": [{"id": "c", "pp": 10, "target": "normal"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+            "p2": {"active": [
+                {"moves": [{"id": "d", "pp": 10, "target": "normal"}]},
+                {"moves": [{"id": "e", "pp": 10, "target": "self"}]},
+            ], "side": {"pokemon": [
+                {"condition": "100/100"}, {"condition": "100/100"},
+                {"condition": "100/100"}, {"condition": "100/100"},
+            ]}},
+        }
+
+        mock_sim = MagicMock()
+        mock_sim.step.return_value = MagicMock(child=99, view=genuine_view)
+
+        result_handle, result_view = _collapse_forced(mock_sim, 42, forced_view)
+
+        assert result_handle == 99
+        assert result_view is genuine_view
+        mock_sim.step.assert_called_once()
+
+    def test_chain_to_terminal(self):
+        """Forced chain ending at terminal returns the terminal state."""
+        forced_view = MagicMock()
+        forced_view.terminal = False
+        forced_view.phase = "forceSwitch"
+        forced_view.to_move = ["p1"]
+        forced_view.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        terminal_view = MagicMock()
+        terminal_view.terminal = True
+
+        mock_sim = MagicMock()
+        mock_sim.step.return_value = MagicMock(child=77, view=terminal_view)
+
+        result_handle, result_view = _collapse_forced(mock_sim, 10, forced_view)
+
+        assert result_handle == 77
+        assert result_view is terminal_view
+
+    def test_simerror_stops_collapse(self):
+        """SimError during forced step -> returns last good state."""
+        forced_view = MagicMock()
+        forced_view.terminal = False
+        forced_view.phase = "forceSwitch"
+        forced_view.to_move = ["p1"]
+        forced_view.legal = {
+            "p1": {"forceSwitch": [True, False], "side": {"pokemon": [
+                {"condition": "0 fnt"}, {"condition": "0 fnt"},
+                {"condition": "100/100"}, {"condition": "0 fnt"},
+            ]}},
+        }
+
+        mock_sim = MagicMock()
+        mock_sim.step.side_effect = SimError("engine error")
+
+        result_handle, result_view = _collapse_forced(mock_sim, 42, forced_view)
+
+        # Falls back to the original handle/view
+        assert result_handle == 42
+        assert result_view is forced_view
+
+    def test_mock_view_passthrough(self):
+        """Unconfigured MagicMock view (non-list to_move) passes through safely."""
+        bare_mock = MagicMock(terminal=False)
+        mock_sim = MagicMock()
+
+        result_handle, result_view = _collapse_forced(mock_sim, 42, bare_mock)
+
+        assert result_handle == 42
+        assert result_view is bare_mock
+        mock_sim.step.assert_not_called()

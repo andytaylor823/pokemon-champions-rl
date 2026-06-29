@@ -21,7 +21,7 @@ import numpy as np
 
 from action_space import A, legal_mask
 from search.cfr import cfr_update_recursive, tree_value
-from search.expansion import cvpn_value, expand_turn_node, puct_expand_one
+from search.expansion import expand_turn_node, puct_expand_one
 from search.strategy import build_policy_target, extract_average_strategy
 from search.types import SearchConfig, SearchResult, TurnNode
 
@@ -33,9 +33,14 @@ if TYPE_CHECKING:
 
 def _single_move_result(
     view: StateView,
-    net: CVPN,
 ) -> SearchResult | None:
     """Short-circuit when every acting side has exactly one legal action.
+
+    A fully-forced decision carries no strategic choice — its value is
+    determined entirely by its successors. No CVPN forward, no regret tables,
+    no training tuple (self-play.md §2.2). Value is returned as 0.0 because
+    SelfPlay never calls search() on forced decisions; callers that need a
+    value (e.g. evaluation) should skip forced states or evaluate separately.
 
     Returns a SearchResult with deterministic strategy, or None if any side
     has more than one legal action (meaning real search is needed).
@@ -61,9 +66,10 @@ def _single_move_result(
         pt[action_idx] = 1.0
         policy_target[s] = pt
 
+    # No CVPN call — forced decisions have no strategic content (self-play.md §2.2, §11)
     return SearchResult(
         strategy=strategy,
-        value=cvpn_value(net, view),
+        value=0.0,
         policy_target=policy_target,
     )
 
@@ -91,7 +97,7 @@ def search(
     if config is None:
         config = SearchConfig()
 
-    skip = _single_move_result(view, net)
+    skip = _single_move_result(view)
     if skip is not None:
         return skip
 

@@ -92,7 +92,13 @@ function newBattle(teamA: PokemonSet[], teamB: PokemonSet[], seed?: Seed): any {
 }
 
 function cloneBattle(battle: any): any {
-  return State.deserializeBattle(State.serializeBattle(battle));
+  const clone = State.deserializeBattle(State.serializeBattle(battle));
+  // State.deserializeBattle resets sentLogPos to 0 (the constructor default)
+  // while preserving the full accumulated log. Once the log exceeds ~1000
+  // lines the safety check in singleEvent fires a false-positive "Infinite
+  // loop" error. Fix: tell the clone its inherited log is already "sent."
+  clone.sentLogPos = clone.log.length;
+  return clone;
 }
 
 function actingSides(battle: any): Side[] {

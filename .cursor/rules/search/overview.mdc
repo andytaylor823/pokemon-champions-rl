@@ -39,9 +39,11 @@ search(view, sim, net, from_handle, config=None) → SearchResult
    - Phase B: One PUCT-guided expansion (widen a ChanceNode or deepen a frontier leaf).
 3. **Extract results** — average strategy from `strategy_sum`, value from `tree_value`.
 
-## Single-move short-circuit
+## Forced-node collapse
 
-If every acting side has exactly one legal action, `search()` returns immediately with a deterministic strategy (no tree built).
+**Root:** If every acting side has exactly one legal action, `search()` returns immediately with a deterministic strategy and `value=0.0` — no CVPN forward, no tree built (forced decisions carry no strategic content).
+
+**In-tree:** During expansion (grid cell eval, ChanceNode widening, frontier deepening), forced decisions are collapsed transparently via `_collapse_forced`. The helper chains through forced actions — stepping with fresh seeds — until reaching a genuine decision, terminal, or non-acting state. Only the final state is CVPN-evaluated. No degenerate TurnNodes with 1×1 grids are created.
 
 ## Session lifecycle
 
@@ -54,7 +56,7 @@ If every acting side has exactly one legal action, `search()` returns immediatel
 | `types.py` | Data containers (`SearchConfig`, `SearchResult`, `TurnNode`, `ChanceNode`, `InfoSet`, `ChanceOutcome`) |
 | `core.py` | `search()` orchestration + single-move short-circuit |
 | `cfr.py` | `regret_matching`, `cfr_update_recursive`, `tree_value` |
-| `expansion.py` | `expand_turn_node`, `puct_expand_one`, `puct_scores`, `puct_select_cell`, `cvpn_value` |
+| `expansion.py` | `expand_turn_node`, `puct_expand_one`, `puct_scores`, `puct_select_cell`, `cvpn_value`, `_forced_view_choices`, `_collapse_forced` |
 | `strategy.py` | `extract_average_strategy`, `build_policy_target` |
 
 ## Phase 1 pins

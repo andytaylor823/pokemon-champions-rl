@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { packTeam, countRemaining, type PokemonSet } from "../src/battle-runner";
+import {
+  packTeam,
+  countRemaining,
+  parseOutcome,
+  StrategyPlayer,
+  type PokemonSet,
+} from "../src/battle-runner";
+import type { Strategy } from "../src/types";
 import { TEAM_A } from "./fixtures/teams";
 
 // A minimal valid Champions-format Pokemon for reuse across tests
@@ -243,5 +250,128 @@ describe("countRemaining", () => {
 
   it("handles empty log", () => {
     expect(countRemaining([], "p1")).toBe(4);
+  });
+});
+
+// ==========================================================================
+// A2 — BattleRunner inline log-parse, extracted into parseOutcome.
+// These branches (tie / null winner / multiple turn lines) are unreachable
+// through the e2e happy paths, so they are exercised directly here.
+// ==========================================================================
+
+describe("parseOutcome", () => {
+  it("maps a '|win|Player 1' line to p1", () => {
+    expect(parseOutcome(["|turn|1", "|win|Player 1"])).toEqual({
+      winner: "p1",
+      turns: 1,
+    });
+  });
+
+  it("maps a '|win|Player 2' line to p2", () => {
+    expect(parseOutcome(["|turn|3", "|win|Player 2"])).toEqual({
+      winner: "p2",
+      turns: 3,
+    });
+  });
+
+  it("maps any non-'Player 1' winner name to p2 (documents the brittle check)", () => {
+    // run() always names players "Player 1"/"Player 2", so this fallback is
+    // never hit in practice — but the mapping is `=== "Player 1" ? p1 : p2`.
+    expect(parseOutcome(["|win|Somebody Else"]).winner).toBe("p2");
+    expect(parseOutcome(["|win|"]).winner).toBe("p2");
+  });
+
+  it("maps a '|tie' line to a tie", () => {
+    expect(parseOutcome(["|turn|9", "|tie"]).winner).toBe("tie");
+  });
+
+  it("recognises the '|tie|' variant (startsWith '|tie')", () => {
+    expect(parseOutcome(["|tie|"]).winner).toBe("tie");
+  });
+
+  it("returns null winner and 0 turns for a log with no result", () => {
+    expect(parseOutcome(["|start", "|move|p1a: Foo|Bar"])).toEqual({
+      winner: null,
+      turns: 0,
+    });
+  });
+
+  it("returns null winner and 0 turns for an empty log", () => {
+    expect(parseOutcome([])).toEqual({ winner: null, turns: 0 });
+  });
+
+  it("uses the last turn line when several are present", () => {
+    expect(parseOutcome(["|turn|1", "|turn|2", "|turn|15"]).turns).toBe(15);
+  });
+
+  it("uses the last result line when a tie is later overridden by a win", () => {
+    // Last-wins semantics: a later |win| supersedes an earlier |tie|.
+    expect(parseOutcome(["|tie", "|win|Player 1"]).winner).toBe("p1");
+  });
+
+  it("parses winner and turns independently regardless of ordering", () => {
+    expect(parseOutcome(["|win|Player 2", "|turn|7"])).toEqual({
+      winner: "p2",
+      turns: 7,
+    });
+  });
+});
+
+describe("StrategyPlayer", () => {
+  /**
+   * Construct a StrategyPlayer with a fake stream. Showdown's BattlePlayer
+   * constructor only stores the stream (listening starts in start(), which we
+   * never call), and choose(c) does stream.write(c) — so we can drive
+   * receiveError / receiveRequest directly and observe choices via `writes`.
+   */
+  function makePlayer(strategy: Strategy) {
+    const writes: string[] = [];
+    const fakeStream = { write: (s: string) => writes.push(s) };
+    const player = new StrategyPlayer(fakeStream as any, strategy);
+    return { player, writes };
+  }
+
+  describe("receiveError", () => {
+    it("swallows '[Unavailable choice]' errors without throwing", () => {
+      const { player, writes } = makePlayer(() => "move 1");
+      expect(() =>
+        player.receiveError(new Error("[Unavailable choice] can't switch")),
+      ).not.toThrow();
+      expect(writes).toHaveLength(0);
+    });
+
+    it("re-throws any other error", () => {
+      const { player } = makePlayer(() => "move 1");
+      expect(() => player.receiveError(new Error("boom"))).toThrow(/boom/);
+    });
+  });
+
+  describe("receiveRequest", () => {
+    it("ignores a wait request: strategy not called, nothing chosen", () => {
+      let called = false;
+      const { player, writes } = makePlayer(() => {
+        called = true;
+        return "move 1";
+      });
+      player.receiveRequest({ wait: true });
+      expect(called).toBe(false);
+      expect(writes).toHaveLength(0);
+    });
+
+    it("calls the strategy and writes its choice for an active request", () => {
+      const { player, writes } = makePlayer((req) => {
+        // Confirm the request object is forwarded to the strategy.
+        expect(req.active).toBeDefined();
+        return "move 2 1";
+      });
+      player.receiveRequest({ active: [{ moves: [] }] });
+      expect(writes).toEqual(["move 2 1"]);
+    });
+
+    it("forwards forceSwitch requests to the strategy", () => {
+      const { player, writes } = makePlayer(() => "switch 3");
+      player.receiveRequest({ forceSwitch: [true], side: { pokemon: [] } });
+      expect(writes).toEqual(["switch 3"]);
+    });
   });
 });

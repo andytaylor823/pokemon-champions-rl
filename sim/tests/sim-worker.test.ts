@@ -3,7 +3,7 @@
  * (no subprocess) thanks to the `require.main === module` guard.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { dispatch, resetState } from "../src/sim-worker";
+import { dispatch, resetState, phaseOf, utilityOf } from "../src/sim-worker";
 import { TEAM_A, TEAM_B } from "./fixtures/teams";
 
 /** Live handle / session counts, read through the public `stats` command. */
@@ -1137,5 +1137,207 @@ describe("sim-worker dispatch (unit)", () => {
         expect(move).toHaveProperty(key);
       }
     });
+  });
+
+  // ==========================================================================
+  // A1 — Search-correctness contracts, exercised through the worker boundary
+  // (dispatch), not just at the raw State level. Covers clone == parent
+  // fidelity, step reproducibility, and the real cloneBattle/step code path.
+  // ==========================================================================
+  describe("search contracts through the worker", () => {
+    /** Stable JSON for deep comparison of snapshots/views. */
+    const json = (x: unknown) => JSON.stringify(x);
+
+    /** Roll a handle to terminal, collecting per-step outcomes + every view. */
+    function rollout(startHandle: number, maxSteps = 250) {
+      let h = startHandle;
+      const outcomes: string[][] = [];
+      const views: any[] = [];
+      for (let i = 0; i < maxSteps; i++) {
+        const v = dispatch({ cmd: "view", handle: h }).view;
+        views.push(v);
+        if (v.terminal) return { handle: h, view: v, outcomes, views };
+        const step = autoStep(h, i * 4 + 1);
+        outcomes.push(step.outcome);
+        h = step.child;
+      }
+      throw new Error("rollout did not terminate");
+    }
+
+    it("a clone reproduces the parent snapshot exactly (team preview)", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const source = dispatch({ cmd: "view", handle: battle.handle }).view;
+
+      const search = dispatch({ cmd: "open_search", from: battle.handle });
+      const clone = search.root_view;
+
+      expect(json(clone.snapshot)).toBe(json(source.snapshot));
+      expect(clone.phase).toBe(source.phase);
+      expect(clone.to_move).toEqual(source.to_move);
+      expect(clone.terminal).toBe(source.terminal);
+      expect(clone.utility).toEqual(source.utility);
+
+      dispatch({ cmd: "close_search", session: search.session });
+    });
+
+    it("a clone reproduces the parent snapshot exactly (mid-battle)", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+      expect(step1.view.phase).toBe("move");
+
+      // Clone the mid-battle handle and compare the clone's snapshot.
+      const source = dispatch({ cmd: "view", handle: step1.child }).view;
+      const search = dispatch({ cmd: "open_search", from: step1.child });
+      const clone = search.root_view;
+
+      expect(json(clone.snapshot)).toBe(json(source.snapshot));
+      expect(clone.phase).toBe(source.phase);
+      expect(clone.to_move).toEqual(source.to_move);
+
+      dispatch({ cmd: "close_search", session: search.session });
+    });
+
+    it("step is reproducible: same parent + same seed + same choices => identical result", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+      expect(step1.view.phase).toBe("move");
+
+      const choices = { p1: "move 1, move 1", p2: "move 1 1, move 1 1" };
+      for (const seed of [
+        [100, 200, 300, 400],
+        [7, 7, 7, 7],
+        [999, 1, 2, 3],
+      ] as [number, number, number, number][]) {
+        const a = dispatch({ cmd: "step", handle: step1.child, choices, seed });
+        const b = dispatch({ cmd: "step", handle: step1.child, choices, seed });
+        // Identical reseed => identical RNG => identical events and state.
+        expect(a.outcome).toEqual(b.outcome);
+        expect(json(a.view.snapshot)).toBe(json(b.view.snapshot));
+        expect(a.view.utility).toEqual(b.view.utility);
+      }
+    });
+
+    it("two independent rollouts from one root with identical seeds agree", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const search = dispatch({ cmd: "open_search", from: battle.handle });
+
+      // Step the SAME root twice (step is immutable) with the same per-step seeds.
+      const r1 = rollout(search.root);
+      const r2 = rollout(search.root);
+
+      expect(r1.outcomes).toEqual(r2.outcomes);
+      expect(json(r1.view.snapshot)).toBe(json(r2.view.snapshot));
+      expect(r1.view.utility).toEqual(r2.view.utility);
+      expect(r1.view.terminal).toBe(true);
+
+      dispatch({ cmd: "close_search", session: search.session });
+    });
+
+    it("a full rollout via the real cloneBattle/step path completes without error", () => {
+      // Each step clones the parent (the worker's cloneBattle, with its
+      // sentLogPos fix) and applies choices. Historically a missing sentLogPos
+      // fix produced a false "Infinite loop" error during such deep sequential
+      // stepping. This exercises the worker's actual code path end-to-end; the
+      // >1000-line stress variant is covered at the State level in
+      // integration/battle.test.ts.
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const search = dispatch({ cmd: "open_search", from: battle.handle });
+
+      const r = rollout(search.root);
+
+      expect(r.view.terminal).toBe(true);
+      // A complete battle accumulates a substantial log across the clone chain.
+      const totalLines = r.outcomes.reduce((n, o) => n + o.length, 0);
+      expect(totalLines).toBeGreaterThan(100);
+      // Every intermediate clone produced a well-shaped, finite snapshot.
+      for (const v of r.views) {
+        expect(v.snapshot.sides).toHaveLength(2);
+        for (const side of v.snapshot.sides) {
+          for (const mon of side.pokemon) {
+            expect(Number.isFinite(mon.hp)).toBe(true);
+            expect(Number.isFinite(mon.maxhp)).toBe(true);
+          }
+        }
+      }
+
+      dispatch({ cmd: "close_search", session: search.session });
+    });
+  });
+});
+
+// ============================================================================
+// A4 — Pure decision helpers, tested at every branch with stub battle objects.
+// utilityOf's tie branch and phaseOf's fallthrough are unreachable through a
+// real battle deterministically, so they are asserted directly here.
+// ============================================================================
+
+describe("utilityOf", () => {
+  it("returns null for a non-terminal battle", () => {
+    expect(utilityOf({ ended: false } as any)).toBeNull();
+  });
+
+  it("returns +1/-1 (zero-sum) when p1 wins", () => {
+    expect(utilityOf({ ended: true, winner: "p1" } as any)).toEqual({ p1: 1, p2: -1 });
+  });
+
+  it("returns -1/+1 (zero-sum) when p2 wins", () => {
+    expect(utilityOf({ ended: true, winner: "p2" } as any)).toEqual({ p1: -1, p2: 1 });
+  });
+
+  it("returns 0/0 for a tie (empty-string winner)", () => {
+    expect(utilityOf({ ended: true, winner: "" } as any)).toEqual({ p1: 0, p2: 0 });
+  });
+
+  it("returns 0/0 for a tie (null winner)", () => {
+    expect(utilityOf({ ended: true, winner: null } as any)).toEqual({ p1: 0, p2: 0 });
+  });
+
+  it("returns 0/0 for a tie (undefined winner)", () => {
+    expect(utilityOf({ ended: true } as any)).toEqual({ p1: 0, p2: 0 });
+  });
+
+  it("is always zero-sum across every terminal outcome", () => {
+    for (const winner of ["p1", "p2", "", null]) {
+      const u = utilityOf({ ended: true, winner } as any)!;
+      expect(u.p1 + u.p2).toBe(0);
+    }
+  });
+});
+
+describe("phaseOf", () => {
+  it("returns 'terminal' for an ended battle regardless of requestState", () => {
+    expect(phaseOf({ ended: true, requestState: "move" } as any)).toBe("terminal");
+  });
+
+  it("maps engine requestState 'teampreview' to 'teamPreview'", () => {
+    expect(phaseOf({ ended: false, requestState: "teampreview" } as any)).toBe("teamPreview");
+  });
+
+  it("maps engine requestState 'switch' to 'forceSwitch'", () => {
+    expect(phaseOf({ ended: false, requestState: "switch" } as any)).toBe("forceSwitch");
+  });
+
+  it("maps engine requestState 'move' to 'move'", () => {
+    expect(phaseOf({ ended: false, requestState: "move" } as any)).toBe("move");
+  });
+
+  it("returns 'none' when requestState is empty string (fallthrough)", () => {
+    expect(phaseOf({ ended: false, requestState: "" } as any)).toBe("none");
+  });
+
+  it("returns 'none' when requestState is undefined (fallthrough)", () => {
+    expect(phaseOf({ ended: false } as any)).toBe("none");
+  });
+
+  it("passes through an unrecognised requestState verbatim (fallthrough)", () => {
+    expect(phaseOf({ ended: false, requestState: "weird" } as any)).toBe("weird");
   });
 });

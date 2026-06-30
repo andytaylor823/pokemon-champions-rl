@@ -327,34 +327,47 @@ describe("snapshot status and fainted pokemon", () => {
     dispatch({ cmd: "close_search", session: session.session });
   });
 
-  it("status field populated during battle", () => {
+  it("status field populated after Sleep Powder lands", () => {
     const battle = freshBattle();
-    const session = dispatch({ cmd: "open_search", from: battle.handle });
+    // Put Venusaur (pos 2, has Sleep Powder as move 2) active in p1a slot
+    const step1 = dispatch({
+      cmd: "step", handle: battle.handle,
+      choices: { p1: "team 2134", p2: "team 1234" },
+      seed: [10, 20, 30, 40],
+    });
+    expect(step1.view.phase).toBe("move");
 
-    // Scan through the game looking for any pokemon with a non-null status
+    // Try Sleep Powder across several turns with different seeds until it
+    // lands — 75% accuracy means it almost always hits on the first try.
+    const session = dispatch({ cmd: "open_search", from: step1.child });
     let h = session.root;
     let statusMon: any = null;
-    for (let i = 0; i < 200; i++) {
-      const v = dispatch({ cmd: "view", handle: h }).view;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const seed: [number, number, number, number] = [
+        attempt * 100 + 1, attempt * 100 + 2, attempt * 100 + 3, attempt * 100 + 4,
+      ];
+      // Venusaur Sleep Powder (move 2) targeting opponent slot 1,
+      // Charizard Protect (move 2) to avoid interference
+      const step = dispatch({
+        cmd: "step", handle: h,
+        choices: { p1: "move 2 1, move 2", p2: "move 4, move 4" },
+        seed,
+      });
 
-      const allPokemon = v.snapshot.sides.flatMap((s: any) => s.pokemon);
-      const withStatus = allPokemon.find((m: any) => m.status !== null);
+      const p2side = step.view.snapshot.sides[1];
+      const withStatus = p2side.pokemon.find((m: any) => m.status !== null);
       if (withStatus) {
         statusMon = withStatus;
         break;
       }
-
-      if (v.terminal) break;
-      h = autoStep(h, i * 4 + 1).child;
+      if (step.view.terminal) break;
+      h = step.child;
     }
 
-    // Over a full battle, status effects (burn, sleep, paralysis) typically
-    // appear. If one was found, verify its structure.
-    if (statusMon) {
-      expect(typeof statusMon.status).toBe("string");
-      expect(statusMon.status.length).toBeGreaterThan(0);
-      expect(statusMon.statusState).toBeDefined();
-    }
+    expect(statusMon).not.toBeNull();
+    expect(typeof statusMon.status).toBe("string");
+    expect(statusMon.status.length).toBeGreaterThan(0);
+    expect(statusMon.statusState).toBeDefined();
 
     dispatch({ cmd: "close_search", session: session.session });
   });
@@ -485,11 +498,14 @@ describe("snapshot field completeness", () => {
     }
   });
 
-  it("teraType and terastallized null in Champions format", () => {
+  it("terastallized null and teraType populated in Champions format", () => {
     const battle = freshBattle();
     const v = dispatch({ cmd: "view", handle: battle.handle }).view;
     for (const side of v.snapshot.sides) {
       for (const mon of side.pokemon) {
+        // teraType is populated with the mon's primary type even though
+        // Terastallization is unavailable in Champions Reg M-A.
+        expect(typeof mon.teraType).toBe("string");
         expect(mon.terastallized).toBeNull();
       }
     }

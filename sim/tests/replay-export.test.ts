@@ -99,14 +99,15 @@ describe("generateReplayHtml", () => {
     expect(html).toContain("gen9championsvgc2026regma");
   });
 
-  it("embeds log content containing </script> without escaping (documents limitation)", () => {
+  it("escapes </script sequences in log content to prevent XSS", () => {
     const result = minimalResult({
       log: ["|turn|1", "</script><script>alert(1)</script>", "|win|Player 1"],
     });
     const html = generateReplayHtml(result, { formatId: "t", p1: "A", p2: "B" });
-    // The log is embedded raw in <script type="text/plain">. A literal </script>
-    // in the log terminates the tag prematurely. This documents current behavior.
-    expect(html).toContain("</script><script>alert(1)</script>");
+    // Literal </script> in the log must be neutralized so it can't terminate
+    // the <script type="text/plain"> tag and inject executable content.
+    expect(html).not.toContain("</script><script>alert(1)");
+    expect(html).toContain("<\\/script><script>alert(1)<\\/script>");
   });
 
   it("single quotes in player names pass through unescaped", () => {
@@ -178,6 +179,20 @@ describe("saveReplay", () => {
     expect(saved).toContain("replays");
     expect(saved).toContain("DefaultA-vs-DefaultB-");
     expect(saved).toMatch(/\.html$/);
+    expect(fs.existsSync(saved)).toBe(true);
+  });
+
+  it("sanitizes player names containing path separators (prevents traversal)", () => {
+    const saved = saveReplay(minimalResult(), {
+      formatId: "test", p1: "../../etc/malicious", p2: "normal",
+    });
+    tempFiles.push(saved);
+
+    // The resolved path must stay inside the replays/ directory —
+    // path separators in names are stripped by slugify.
+    const replaysDir = path.resolve(path.join(__dirname, "..", "replays"));
+    expect(saved.startsWith(replaysDir)).toBe(true);
+    expect(saved).not.toContain("..");
     expect(fs.existsSync(saved)).toBe(true);
   });
 });

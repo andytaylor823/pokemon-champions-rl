@@ -190,20 +190,21 @@ tensors that no longer mean what it reads — corrupting training with no error.
 load, forcing a deliberate "start fresh" rather than a hidden bug. (A schema change already forces a
 fresh net + fresh run anyway, so refusing costs nothing real.)
 
-**Proposed fingerprint.** A structural signature plus a manual version, both checked:
-- **Structural:** `action_space.A` (= 1089) and the `ObsBundle` feature dims — entity `F` (= 65),
-  `field Ff`, `sides Fs`, `scalars Fg`, and the move-slot count. Catches any dimension change
-  automatically.
-- **Manual:** an `ENCODER_SCHEMA_VERSION` integer the encoder owns and bumps on a
+**Fingerprint (implemented).** A structural signature plus a manual version, both built from **live
+module constants** and checked on load:
+- **Structural:** `action_space.A` and the encoder's feature-dim constants — `ENTITY_FEATURE_DIM`,
+  `FIELD_FEATURE_DIM`, `SIDE_FEATURE_DIM`, `SCALAR_FEATURE_DIM`, `NUM_MOVE_SLOTS`. Catches any
+  dimension change automatically.
+- **Manual:** `ENCODER_SCHEMA_VERSION` — an integer the encoder owns and bumps on a
   *semantic-but-same-width* change (e.g. reordering features within the same `F`), which the
   structural signature alone would miss.
 
-> **Cross-module flag → `encoder.md` / `action-space.md`.** For the guard to work, the
-> encoder/action-space modules must expose a stable **version/dim constant**. Today neither does
-> (the dims live implicitly in `src/encoder.py` and `A` in `src/action_space.py`). Building the guard
-> requires surfacing them. Until that exists, a pragmatic interim is to fingerprint on
-> `action_space.A` + the observed `entities`/`field`/`sides`/`scalars` shapes of the first stored
-> bundle.
+> **The fingerprint records *code* identity, not *data* shape.** It is read from the live
+> `action_space` / `encoder` modules at `save` (the schema the producing code assumed) and re-read
+> live at `load` (the schema the consuming code now assumes), then compared. It deliberately does
+> **not** introspect the stored tuples: a signature read back off the saved data could only ever
+> match itself, so it could never detect a code change since save. The live module constants are the
+> source of truth on both sides — the same reason `action_space.A` works.
 
 ## 7. Concurrency seam (deferred)
 

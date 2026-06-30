@@ -20,10 +20,9 @@ import torch
 import action_space
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable
     from pathlib import Path
 
-    from obs_bundle import ObsBundle
     from training_types import TrainingTuple
 
 # Bump only when the on-disk save *payload* shape changes — distinct from the encoder
@@ -42,48 +41,32 @@ class SchemaMismatchError(RuntimeError):
     """
 
 
-def _current_encoder_schema_version() -> int | None:
-    """The encoder's manual schema version, if it exposes one.
+def _current_schema() -> dict:
+    """Fingerprint of the encoder/action-space schema the *currently loaded code* produces.
 
-    The encoder does not expose ``ENCODER_SCHEMA_VERSION`` yet (flagged in
-    ``docs/plans/encoder.md``). Until it does, this returns ``None`` and the
-    same-width-layout half of the guard is inactive; the structural action-space-size
-    check (§6) still fires. Once the constant lands, the guard activates automatically.
+    Recorded at ``save`` and re-read at ``load``, then compared. It is built from live
+    module constants — ``action_space.A`` and the encoder's derived dim + version constants
+    — never from the stored tuples. That distinction is the whole point: a fingerprint read
+    back off the saved data could only ever match itself, so it could not detect a code
+    change since save. Reading the live modules on both sides means a real schema drift is
+    caught (``docs/plans/replay-buffer.md`` §6):
+
+    - ``action_space_A`` — catches an action-space resize (e.g. the planned 1089 -> 819).
+    - ``entities_F`` / ``field_Ff`` / ``sides_Fs`` / ``scalars_Fg`` / ``move_slots`` — the
+      encoder's feature widths; catch any dimension change automatically.
+    - ``encoder_schema_version`` — the encoder's manual version; catches a semantic-but-
+      same-width change (e.g. feature reordering) the widths alone would miss.
     """
-    try:
-        from encoder import ENCODER_SCHEMA_VERSION
+    import encoder
 
-        return int(ENCODER_SCHEMA_VERSION)
-    except (ImportError, AttributeError):
-        return None
-
-
-def _bundle_dims(beta: ObsBundle) -> dict[str, int]:
-    """Structural feature dims of one (unbatched) ObsBundle — the recorded signature."""
-    return {
-        "entities_F": int(beta["entities"].shape[-1]),
-        "field_Ff": int(beta["field"].shape[-1]),
-        "sides_Fs": int(beta["sides"].shape[-1]),
-        "scalars_Fg": int(beta["scalars"].shape[-1]),
-        "move_slots": int(beta["ids", "moves"].shape[-1]),
-        "action_mask_A": int(beta["action_mask"].shape[-1]),
-    }
-
-
-def _schema_fingerprint(tuples: Sequence[TrainingTuple] | deque[TrainingTuple]) -> dict:
-    """Signature of the encoder/action-space schema the stored tuples assume.
-
-    ``action_space_A`` is read from the *current* ``action_space`` module, so it is
-    recomputed on load and a resize (e.g. the planned 1089 -> 819 canonicalization) is
-    caught. ``bundle_dims`` (from the first tuple) document the layout and guard against
-    a corrupt file. ``encoder_schema_version`` activates the same-width-layout check once
-    the encoder exposes the constant. See ``docs/plans/replay-buffer.md`` §6.
-    """
-    first = next(iter(tuples), None)
     return {
         "action_space_A": int(action_space.A),
-        "encoder_schema_version": _current_encoder_schema_version(),
-        "bundle_dims": _bundle_dims(first.beta) if first is not None else None,
+        "encoder_schema_version": int(encoder.ENCODER_SCHEMA_VERSION),
+        "entities_F": int(encoder.ENTITY_FEATURE_DIM),
+        "field_Ff": int(encoder.FIELD_FEATURE_DIM),
+        "sides_Fs": int(encoder.SIDE_FEATURE_DIM),
+        "scalars_Fg": int(encoder.SCALAR_FEATURE_DIM),
+        "move_slots": int(encoder.NUM_MOVE_SLOTS),
     }
 
 
@@ -134,7 +117,7 @@ class ReplayBuffer:
         """Persist contents + RNG state + schema fingerprint via ``torch.save`` (§5)."""
         payload = {
             "format_version": _FORMAT_VERSION,
-            "schema": _schema_fingerprint(self._buf),
+            "schema": _current_schema(),
             "capacity": self._capacity,
             "tuples": list(self._buf),  # FIFO order, oldest first
             "rng_state": self._rng.getstate(),
@@ -151,27 +134,16 @@ class ReplayBuffer:
         """
         payload = torch.load(path, weights_only=False)
 
-        if payload.get("format_version") != _FORMAT_VERSION:
-            raise SchemaMismatchError(f"buffer file format_version {payload.get('format_version')!r} != current {_FORMAT_VERSION}; refusing to load.")
+        saved_format = payload.get("format_version")
+        if saved_format != _FORMAT_VERSION:
+            raise SchemaMismatchError(f"buffer file format_version {saved_format!r} != current {_FORMAT_VERSION}; refusing to load.")
 
-        stored = payload["schema"]
-        current_a = int(action_space.A)
-        if stored.get("action_space_A") != current_a:
-            raise SchemaMismatchError(f"action-space size changed: saved A={stored.get('action_space_A')}, current A={current_a}. Refusing to load a stale-schema buffer.")
-
-        current_ver = _current_encoder_schema_version()
-        saved_ver = stored.get("encoder_schema_version")
-        if current_ver is not None and saved_ver is not None and current_ver != saved_ver:
-            raise SchemaMismatchError(f"encoder schema version changed: saved {saved_ver}, current {current_ver}. Refusing to load a stale-schema buffer.")
-
-        tuples = payload["tuples"]
-        saved_dims = stored.get("bundle_dims")
-        if saved_dims is not None and tuples:
-            actual = _bundle_dims(tuples[0].beta)
-            if actual != saved_dims:
-                raise SchemaMismatchError(f"stored bundle dims {saved_dims} != loaded tuple dims {actual} (corrupt file?).")
+        stored, current = payload["schema"], _current_schema()
+        if stored != current:
+            diffs = {k: (stored.get(k), current.get(k)) for k in stored.keys() | current.keys() if stored.get(k) != current.get(k)}
+            raise SchemaMismatchError(f"encoder/action-space schema changed since save (saved -> current): {diffs}. Refusing to load a stale-schema buffer.")
 
         buf = cls(capacity=int(payload["capacity"]), seed=None)
-        buf._buf.extend(tuples)
+        buf._buf.extend(payload["tuples"])
         buf._rng.setstate(payload["rng_state"])
         return buf

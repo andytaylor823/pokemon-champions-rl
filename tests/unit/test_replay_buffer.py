@@ -9,6 +9,7 @@ synthetic ObsBundles, no SimClient or net.
 from __future__ import annotations
 
 import action_space
+import encoder
 import pytest
 import torch
 
@@ -207,15 +208,26 @@ def test_load_rejects_bad_format_version(tmp_path):
         ReplayBuffer.load(path)
 
 
-def test_load_rejects_bundle_dim_corruption(tmp_path):
+def test_load_rejects_encoder_dim_change(tmp_path, monkeypatch):
     buf = ReplayBuffer(capacity=10, seed=0)
     buf.add(_tuple(i) for i in range(3))
     path = tmp_path / "buf.pt"
     buf.save(path)
 
-    payload = torch.load(path, weights_only=False)
-    payload["schema"]["bundle_dims"]["entities_F"] += 1  # claim a different layout
-    torch.save(payload, path)
+    # Simulate widening an entity feature in the encoder (an automatic-catch width change).
+    monkeypatch.setattr(encoder, "ENTITY_FEATURE_DIM", encoder.ENTITY_FEATURE_DIM + 1)
+    with pytest.raises(SchemaMismatchError):
+        ReplayBuffer.load(path)
+
+
+def test_load_rejects_encoder_version_bump(tmp_path, monkeypatch):
+    buf = ReplayBuffer(capacity=10, seed=0)
+    buf.add(_tuple(i) for i in range(3))
+    path = tmp_path / "buf.pt"
+    buf.save(path)
+
+    # Simulate a semantic-but-same-width encoder change announced via the manual version.
+    monkeypatch.setattr(encoder, "ENCODER_SCHEMA_VERSION", encoder.ENCODER_SCHEMA_VERSION + 1)
     with pytest.raises(SchemaMismatchError):
         ReplayBuffer.load(path)
 

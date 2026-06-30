@@ -32,16 +32,6 @@ logger = logging.getLogger(__name__)
 _MAX_STEP_RETRIES = 10
 
 
-# ---------------------------------------------------------------------------
-# Data types (frozen dataclasses per repo convention for hot-path internals)
-# ---------------------------------------------------------------------------
-#
-# The outer-loop seam types — SparsePolicy, TupleMeta, TrainingTuple — now live in
-# src/training_types.py so self_play, replay_buffer, and trainer all import them from
-# neutral ground (see docs/plans/replay-buffer.md §8). They are imported above; used
-# internally by run() and re-exported here for backward compatibility.
-
-
 @dataclass(frozen=True)
 class SelfPlayConfig:
     """Configuration for the self-play data generation loop."""

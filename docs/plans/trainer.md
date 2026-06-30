@@ -36,3 +36,27 @@ Minibatch SGD: `L = ‖v̂−v_search‖² + CE(π̂, σ̄) + λ‖θ‖²`. Pub
   **from-scratch** (the primary correctness proof) and, as a side experiment, **warm-start** from
   the previous stage's checkpoint (vibes 8.8). Warm-start needs checkpoint *load*, which is also
   required by Evaluation — so the checkpoint format is needed earlier than full concurrent training.
+
+## Notes from the ReplayBuffer design
+
+> Added from the ReplayBuffer grilling — see `docs/plans/replay-buffer.md` §4, §5, §12 and
+> `docs/vibes-decisions.md` §8.10–§8.15.
+
+- **The Trainer owns batching — the buffer is a dumb container.** `ReplayBuffer.sample(n)` returns a
+  plain `list[TrainingTuple]`; the Trainer turns it into the minibatch the loss needs:
+  (1) **collate** the `n` per-decision `ObsBundle`s into one batched bundle via the existing
+  `collate_obs_bundles` (`src/obs_bundle.py`); (2) **densify** each `SparsePolicy` into a dense
+  `[n, A]` cross-entropy target, masking illegal entries to match the policy head; (3) **stack** the
+  scalar `value` fields into a `[n]` value target; (4) **move to the training device**. The buffer
+  never imports `A` or touches `ObsBundle` internals — a schema/`A` change ripples into the Trainer
+  (which owns the loss), not the storage layer.
+- **The Trainer owns the warmup threshold.** "Don't start training until the buffer holds ≥ N
+  tuples" is a Trainer/orchestrator config knob, not a buffer concern. The Trainer checks
+  `len(buffer) >= warmup_threshold` before the first gradient step and never asks for more than the
+  buffer holds (`buffer.sample(n)` raises `ValueError` on over-ask) (vibes 8.11).
+- **Buffer-snapshot ↔ checkpoint coordination.** `ReplayBuffer` ships `save`/`load` for mid-stage
+  resume (replay-buffer.md §5). To resume *consistently*, the Trainer/driver should snapshot the
+  buffer at the **same cadence/generation as the net checkpoint**, so restored weights and restored
+  data match. The buffer just provides `save`/`load`; pairing them is the Trainer's job.
+- **Imports `TrainingTuple` from `src/training_types.py`** (the extracted seam module), not from
+  `self_play` (vibes 8.15).

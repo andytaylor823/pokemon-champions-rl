@@ -19,11 +19,10 @@ from search import SearchConfig
 from self_play import (
     CurriculumMatchupSource,
     SelfPlayConfig,
-    SparsePolicy,
-    TrainingTuple,
     run,
 )
 from sim_client import SimClient
+from training_types import SparsePolicy, TrainingTuple
 
 # Use a very small search budget to keep the integration test fast
 _FAST_SEARCH_CONFIG = SearchConfig(

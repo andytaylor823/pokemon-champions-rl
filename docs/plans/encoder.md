@@ -87,6 +87,13 @@ Translate battle observation + belief into the `ObsBundle` tensor schema consume
 - **Top-K candidates per opponent slot** — `BeliefModel`'s concern (Phase 4).
 - **Embedding dims, `d_model`, attention heads/layers** — empirical tuning.
 
+> **Flag (from the ReplayBuffer design, `replay-buffer.md` §6).** `ReplayBuffer.load` fails loudly on
+> an encoder/action-space schema mismatch, which needs a stable **schema fingerprint** to check
+> against. The encoder should expose its feature dims (`F`, `Ff`, `Fs`, `Fg`, move-slot count) and a
+> manual `ENCODER_SCHEMA_VERSION` constant (bumped on a semantic-but-same-width change). Today the
+> dims live implicitly in `src/encoder.py`; surfacing them as constants is the prerequisite for the
+> buffer's persistence guard.
+
 ## ObsBundle Schema (the contract)
 
 ```

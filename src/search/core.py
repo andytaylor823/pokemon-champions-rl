@@ -54,18 +54,12 @@ def search(
 
     # Empty to_move means no side is acting — not a decision point.
     if not view.to_move:
-        raise ValueError(
-            "search() called with empty to_move. Callers must skip "
-            "non-decision states before invoking search()."
-        )
+        raise ValueError("search() called with empty to_move. Callers must skip non-decision states before invoking search().")
 
     # Callers must filter forced decisions before invoking search() — forced
     # roots have no strategic content and no meaningful value to return.
     if forced_actions(view.legal, view.to_move, view.phase) is not None:
-        raise ValueError(
-            "search() called on a forced decision (every acting side has exactly "
-            "one legal action). Callers must skip forced states before invoking search()."
-        )
+        raise ValueError("search() called on a forced decision (every acting side has exactly one legal action). Callers must skip forced states before invoking search().")
 
     sides = view.to_move
 

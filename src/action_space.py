@@ -96,9 +96,7 @@ MOVE_PHASE_OFFSET = TEAM_PREVIEW_COUNT  # 360
 A = TEAM_PREVIEW_COUNT + MOVE_PHASE_COUNT  # 1089
 
 # Precomputed mapping: switch action index → bench position (for cross-slot constraint)
-_SWITCH_INDEX_TO_BENCH: dict[int, int] = {
-    NUM_MOVES * NUM_TARGETS * 2 + (pos - 1): pos for pos in (1, 2)
-}
+_SWITCH_INDEX_TO_BENCH: dict[int, int] = {NUM_MOVES * NUM_TARGETS * 2 + (pos - 1): pos for pos in (1, 2)}
 
 # Showdown ally-target numbers differ by active slot position:
 #   Slot 0 targets its ally (slot 1) with -2
@@ -106,10 +104,7 @@ _SWITCH_INDEX_TO_BENCH: dict[int, int] = {
 _ALLY_SHOWDOWN_TARGET: dict[int, int] = {0: -2, 1: -1}
 
 # Move target types that do NOT accept an explicit target in the choice string
-_NO_TARGET_TYPES = frozenset(
-    {"allAdjacentFoes", "self", "allySide", "foeSide", "all", "allAdjacent",
-     "scripted", "randomNormal", "allies", "allyTeam"}
-)
+_NO_TARGET_TYPES = frozenset({"allAdjacentFoes", "self", "allySide", "foeSide", "all", "allAdjacent", "scripted", "randomNormal", "allies", "allyTeam"})
 
 
 def _canonical_to_showdown_target(canonical_target: int, slot_pos: int) -> int:
@@ -455,9 +450,7 @@ def forced_actions(legal: dict, to_move: list[str], phase: str) -> dict[str, int
 # ---------------------------------------------------------------------------
 
 
-def _slot_choice_contextual(
-    action: SlotAction, slot_moves: list[dict] | None, slot_pos: int, force_pass: bool = False
-) -> str:
+def _slot_choice_contextual(action: SlotAction, slot_moves: list[dict] | None, slot_pos: int, force_pass: bool = False) -> str:
     """Build a Showdown choice fragment, stripping target if the move doesn't accept one.
 
     Combines slot-aware ally targeting with target-type stripping for spread/self moves.

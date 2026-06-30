@@ -111,9 +111,7 @@ class CurriculumMatchupSource:
 # ---------------------------------------------------------------------------
 
 
-def _sample_action(
-    strategy: dict[int, float], rng: random.Random, temperature: float
-) -> int:
+def _sample_action(strategy: dict[int, float], rng: random.Random, temperature: float) -> int:
     """Sample one action index from sparse sigma-bar with temperature scaling.
 
     Temperature rescaling: p_i' = p_i^(1/tau), then renormalize.
@@ -154,9 +152,7 @@ def _rng_seed(rng: random.Random) -> list[int]:
     return [rng.randint(0, 0xFFFF) for _ in range(4)]
 
 
-def _advance(
-    sim: SimClient, handle: int, choices: dict[str, str], seed: list[int]
-) -> tuple[int, StateView]:
+def _advance(sim: SimClient, handle: int, choices: dict[str, str], seed: list[int]) -> tuple[int, StateView]:
     """Step the battle forward and release the old handle.
 
     Centralizes the step+release contract: callers never need to manage
@@ -213,13 +209,12 @@ def _sample_and_step(
                     "No strategy for acting side %s at %s decision — search "
                     "returned an empty action set (likely an empty legal mask); "
                     "cannot sample. Aborting before any step attempt.",
-                    side, view.phase,
+                    side,
+                    view.phase,
                 )
                 return None
             action_idx = _sample_action(side_strategy, game_rng, temperature)
-            choices[side] = action_to_choice_contextual(
-                action_idx, view.legal.get(side)
-            )
+            choices[side] = action_to_choice_contextual(action_idx, view.legal.get(side))
 
         step_seed = _rng_seed(game_rng)
         try:
@@ -227,12 +222,15 @@ def _sample_and_step(
         except SimError as e:
             logger.debug(
                 "Step attempt %d: SimError=%s choices=%s",
-                _attempt, str(e), choices,
+                _attempt,
+                str(e),
+                choices,
             )
 
     logger.warning(
         "Exhausted %d resample attempts without an engine-legal joint at %s decision.",
-        _MAX_STEP_RETRIES, view.phase,
+        _MAX_STEP_RETRIES,
+        view.phase,
     )
     return None
 
@@ -324,25 +322,17 @@ def run(
                 # Compute masks once for this decision point — used by the
                 # forced check and the buffering loop, avoiding redundant
                 # legal_mask calls.
-                masks = {
-                    s: legal_mask(view.legal.get(s), view.phase)
-                    for s in view.to_move
-                }
+                masks = {s: legal_mask(view.legal.get(s), view.phase) for s in view.to_move}
 
                 # --- Forced-decision skip ---
                 forced = _is_forced(masks)
                 if forced is not None:
-                    choices = {
-                        s: action_to_choice_contextual(idx, view.legal.get(s))
-                        for s, idx in forced.items()
-                    }
+                    choices = {s: action_to_choice_contextual(idx, view.legal.get(s)) for s, idx in forced.items()}
                     handle, view = _advance(sim, handle, choices, _rng_seed(game_rng))
                     continue
 
                 # --- Genuine decision: run search ---
-                result = search(
-                    view, sim, net, from_handle=handle, config=config.search_config
-                )
+                result = search(view, sim, net, from_handle=handle, config=config.search_config)
 
                 # Buffer one tuple per side with >=2 legal actions
                 for side in view.to_move:
@@ -362,14 +352,16 @@ def run(
                         phase=view.phase,
                         side=side,
                     )
-                    pending.append(
-                        _PendingTuple(beta=beta, value=value, policy=policy, meta=meta)
-                    )
+                    pending.append(_PendingTuple(beta=beta, value=value, policy=policy, meta=meta))
 
                 # --- Sample from sigma-bar and step (with retry) ---
                 advance_result = _sample_and_step(
-                    sim, handle, view, result.strategy,
-                    game_rng, config.temperature,
+                    sim,
+                    handle,
+                    view,
+                    result.strategy,
+                    game_rng,
+                    config.temperature,
                 )
                 if advance_result is None:
                     # _sample_and_step has already logged the specific cause

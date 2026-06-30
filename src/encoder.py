@@ -201,28 +201,34 @@ def _slot_flags(mon: PokemonSnapshot, is_opponent: bool) -> torch.Tensor:
     pos_right = 1.0 if mon.active and mon.position == 1 else 0.0
     pos_bench = 0.0 if mon.active and mon.position in (0, 1) else 1.0
 
-    return torch.tensor([
-        float(mon.active),
-        float(not mon.active and not mon.fainted),
-        float(mon.fainted),
-        float(item_consumed),
-        pos_left, pos_right, pos_bench,
-        float(is_opponent),
-    ])
+    return torch.tensor(
+        [
+            float(mon.active),
+            float(not mon.active and not mon.fainted),
+            float(mon.fainted),
+            float(item_consumed),
+            pos_left,
+            pos_right,
+            pos_bench,
+            float(is_opponent),
+        ]
+    )
 
 
 def _encode_pokemon_features(mon: PokemonSnapshot, is_opponent: bool = False) -> torch.Tensor:
     """Encode a single pokemon's continuous features into a float tensor [F]."""
-    return torch.cat([
-        _hp_fraction(mon),
-        _norm_stats(mon),
-        _boost_stages(mon),
-        _status_onehot(mon),
-        _nature_onehot(mon),
-        _move_pp_flags(mon),
-        _volatile_counters(mon),
-        _slot_flags(mon, is_opponent),
-    ])
+    return torch.cat(
+        [
+            _hp_fraction(mon),
+            _norm_stats(mon),
+            _boost_stages(mon),
+            _status_onehot(mon),
+            _nature_onehot(mon),
+            _move_pp_flags(mon),
+            _volatile_counters(mon),
+            _slot_flags(mon, is_opponent),
+        ]
+    )
 
 
 def _encode_move_ids(moves: list[MoveSnapshot]) -> torch.Tensor:
@@ -257,10 +263,12 @@ def _terrain_onehot_dur(field_data: FieldSnapshot) -> torch.Tensor:
 def _trick_room(field_data: FieldSnapshot) -> torch.Tensor:
     """Trick Room active flag + normalized duration. [2]"""
     tr = field_data.pseudoWeather.get("trickroom")
-    return torch.tensor([
-        1.0 if tr else 0.0,
-        (tr.duration or 0) / MAX_TURNS if tr else 0.0,
-    ])
+    return torch.tensor(
+        [
+            1.0 if tr else 0.0,
+            (tr.duration or 0) / MAX_TURNS if tr else 0.0,
+        ]
+    )
 
 
 def _gravity(field_data: FieldSnapshot) -> torch.Tensor:
@@ -271,12 +279,14 @@ def _gravity(field_data: FieldSnapshot) -> torch.Tensor:
 
 def _encode_field(field_data: FieldSnapshot) -> torch.Tensor:
     """Encode field-level features into a float tensor [Ff]."""
-    return torch.cat([
-        _weather_onehot_dur(field_data),
-        _terrain_onehot_dur(field_data),
-        _trick_room(field_data),
-        _gravity(field_data),
-    ])
+    return torch.cat(
+        [
+            _weather_onehot_dur(field_data),
+            _terrain_onehot_dur(field_data),
+            _trick_room(field_data),
+            _gravity(field_data),
+        ]
+    )
 
 
 # --- Side sub-encoders ------------------------------------------------------
@@ -285,19 +295,23 @@ def _encode_field(field_data: FieldSnapshot) -> torch.Tensor:
 def _side_screen(name: str, conds: dict[str, SideConditionSnapshot]) -> torch.Tensor:
     """Encode a single duration-based side condition (active + duration). [2]"""
     entry = conds.get(name)
-    return torch.tensor([
-        1.0 if entry is not None else 0.0,
-        (entry.duration or 0) / MAX_TURNS if entry else 0.0,
-    ])
+    return torch.tensor(
+        [
+            1.0 if entry is not None else 0.0,
+            (entry.duration or 0) / MAX_TURNS if entry else 0.0,
+        ]
+    )
 
 
 def _side_hazards(conds: dict[str, SideConditionSnapshot]) -> torch.Tensor:
     """Stealth Rock (binary) + Spikes (layers / 3). [2]"""
     spikes = conds.get("spikes")
-    return torch.tensor([
-        1.0 if "stealthrock" in conds else 0.0,
-        (spikes.layers or 0) / 3.0 if spikes else 0.0,
-    ])
+    return torch.tensor(
+        [
+            1.0 if "stealthrock" in conds else 0.0,
+            (spikes.layers or 0) / 3.0 if spikes else 0.0,
+        ]
+    )
 
 
 def _side_mega() -> torch.Tensor:
@@ -308,14 +322,16 @@ def _side_mega() -> torch.Tensor:
 def _encode_side(side_data: SideSnapshot) -> torch.Tensor:
     """Encode per-side features into a float tensor [Fs]."""
     conds = side_data.sideConditions
-    return torch.cat([
-        _side_screen("tailwind", conds),
-        _side_screen("reflect", conds),
-        _side_screen("lightscreen", conds),
-        _side_screen("auroraveil", conds),
-        _side_hazards(conds),
-        _side_mega(),
-    ])
+    return torch.cat(
+        [
+            _side_screen("tailwind", conds),
+            _side_screen("reflect", conds),
+            _side_screen("lightscreen", conds),
+            _side_screen("auroraveil", conds),
+            _side_hazards(conds),
+            _side_mega(),
+        ]
+    )
 
 
 # --- Scalar sub-encoders ----------------------------------------------------
@@ -337,39 +353,67 @@ def _phase_onehot(view: StateView) -> torch.Tensor:
 def _whose_decision(view: StateView, perspective: str) -> torch.Tensor:
     """Two bits: am I acting, is opponent acting. [2]"""
     opp = "p2" if perspective == "p1" else "p1"
-    return torch.tensor([
-        1.0 if perspective in view.to_move else 0.0,
-        1.0 if opp in view.to_move else 0.0,
-    ])
+    return torch.tensor(
+        [
+            1.0 if perspective in view.to_move else 0.0,
+            1.0 if opp in view.to_move else 0.0,
+        ]
+    )
 
 
 def _encode_scalars(snapshot: BattleSnapshot, view: StateView, perspective: str) -> torch.Tensor:
     """Encode global scalar features into a float tensor [Fg]."""
-    return torch.cat([
-        _turn_norm(snapshot),
-        _phase_onehot(view),
-        _whose_decision(view, perspective),
-    ])
+    return torch.cat(
+        [
+            _turn_norm(snapshot),
+            _phase_onehot(view),
+            _whose_decision(view, perspective),
+        ]
+    )
 
 
 # --- Derived dimension constants (sentinel calls — no manual bookkeeping) ----
 
 _EMPTY_MON = PokemonSnapshot(
-    species="", nature="", level=50, gender="N", hp=0, maxhp=1,
-    fainted=False, status=None, statusState={"stage": None, "time": None},
-    ability="", item=None, lastItem=None, active=False, position=0,
-    activeTurns=0, teraType=None, terastallized=None,
-    stats={}, boosts={}, moves=[], volatiles=[], volatileDetails={},
+    species="",
+    nature="",
+    level=50,
+    gender="N",
+    hp=0,
+    maxhp=1,
+    fainted=False,
+    status=None,
+    statusState={"stage": None, "time": None},
+    ability="",
+    item=None,
+    lastItem=None,
+    active=False,
+    position=0,
+    activeTurns=0,
+    teraType=None,
+    terastallized=None,
+    stats={},
+    boosts={},
+    moves=[],
+    volatiles=[],
+    volatileDetails={},
 )
 _EMPTY_FIELD = FieldSnapshot(
-    weather=None, weatherDuration=None, terrain=None,
-    terrainDuration=None, pseudoWeather={},
+    weather=None,
+    weatherDuration=None,
+    terrain=None,
+    terrainDuration=None,
+    pseudoWeather={},
 )
 _EMPTY_SIDE = SideSnapshot(id="p1", sideConditions={}, pokemon=[])
 _EMPTY_SNAPSHOT = BattleSnapshot(turn=0, field=_EMPTY_FIELD, sides=[_EMPTY_SIDE, _EMPTY_SIDE])
 _EMPTY_VIEW = StateView(
-    phase="", to_move=[], legal={}, snapshot=_EMPTY_SNAPSHOT,
-    terminal=False, utility=None,
+    phase="",
+    to_move=[],
+    legal={},
+    snapshot=_EMPTY_SNAPSHOT,
+    terminal=False,
+    utility=None,
 )
 
 ENTITY_FEATURE_DIM: int = _encode_pokemon_features(_EMPTY_MON).shape[0]

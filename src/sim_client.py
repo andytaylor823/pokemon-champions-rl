@@ -14,6 +14,7 @@ Decisions realised:
 
 Integration tests live in tests/integration/test_sim_client.py.
 """
+
 from __future__ import annotations
 
 import contextlib

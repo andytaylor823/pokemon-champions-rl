@@ -170,7 +170,7 @@ def _nature_onehot(mon: PokemonSnapshot) -> torch.Tensor:
 
 
 def _move_pp_flags(mon: PokemonSnapshot) -> torch.Tensor:
-    """Per-move pp_fraction + disabled flag (4 moves x 2). [8]"""
+    """Per-move pp_fraction + disabled flag (NUM_MOVE_SLOTS moves x 2). [NUM_MOVE_FEATURES]"""
     vec = torch.zeros(NUM_MOVE_FEATURES)
     for i in range(NUM_MOVE_SLOTS):
         if i < len(mon.moves):

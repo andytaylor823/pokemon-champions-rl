@@ -131,12 +131,26 @@ class ReplayBuffer:
         Raises ``SchemaMismatchError`` if the file's format version or encoder/
         action-space schema does not match the current code — never silently loads
         stale-schema data.
+
+        .. warning::
+            Uses ``weights_only=False`` (pickle-based deserialization) because tuples
+            contain arbitrary Python objects. Only load files you produced yourself —
+            a malicious ``.pt`` file can execute arbitrary code.
         """
-        payload = torch.load(path, weights_only=False)
+        # map_location="cpu" ensures portability: a buffer saved on a CUDA machine
+        # can be loaded on a CPU-only one without a device error.
+        payload = torch.load(path, weights_only=False, map_location="cpu")
 
         saved_format = payload.get("format_version")
         if saved_format != _FORMAT_VERSION:
             raise SchemaMismatchError(f"buffer file format_version {saved_format!r} != current {_FORMAT_VERSION}; refusing to load.")
+
+        # Validate expected keys — a corrupted/partial file should raise a clear error
+        # rather than a raw KeyError deep in the reconstruction logic.
+        _REQUIRED_KEYS = ("schema", "capacity", "tuples", "rng_state")
+        missing = [k for k in _REQUIRED_KEYS if k not in payload]
+        if missing:
+            raise SchemaMismatchError(f"corrupted or incomplete buffer file: missing key(s) {missing}")
 
         stored, current = payload["schema"], _current_schema()
         if stored != current:

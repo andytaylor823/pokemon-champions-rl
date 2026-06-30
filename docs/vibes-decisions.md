@@ -447,11 +447,97 @@
 
 ---
 
+## 12. Trainer & Outer-Loop Driver (Phase-1 — built)
+
+> Decisions from the Trainer grilling (`grill-with-docs`). Full design: `docs/plans/trainer.md`.
+> Implemented in `src/trainer.py`, `src/checkpoint.py`, `src/train_loop.py`.
+
+### 12.1 Trainer is a stateful *learner*; the outer-loop loop lives in a separate thin driver
+- **Choice:** `Trainer` holds the CVPN + AdamW optimizer and does one thing — `train_step(batch)`
+  + checkpoint I/O. The `generate -> fill buffer -> (warmup gate) -> train -> checkpoint -> repeat`
+  loop, the generation counter, and the warmup threshold live in a separate ~80-line driver
+  (`train_loop.run_training`). The poker toy bundles all of this into one `Trainer.train()`.
+- **Evidence level:** Principled — the architecture names "the Trainer plus a thin driver" as two
+  concerns (§3.7/§3.8). The split makes the learner unit-testable on a fake batch (no SimClient/
+  games), survives the later concurrent generation/training split (it never owned the loop), and is
+  reused unchanged across curriculum stages (only the driver's inputs vary).
+- **Alternatives:** Fat Trainer owns the loop (the toy shape — fewer files, but tangles data-
+  generation orchestration into the learner and is hard to test in isolation); fully stateless
+  Trainer (awkward net/optimizer ownership).
+- **REVISIT trigger:** None expected for Phase 1.
+- **Impact: Med** — sets the module boundary the whole outer loop is organized around.
+
+### 12.2 One rich checkpoint format, in a neutral `src/checkpoint.py`
+- **Choice:** A single `torch.save` blob: `{format_version, generation, model_config (CVPNConfig as
+  a plain dict via `dataclasses.asdict`), model_state_dict, optimizer_state_dict, trainer_config,
+  rng_state}`. Evaluation + SelfPlay-warm-start read only `model_config` + `model_state_dict`; crash/
+  pause resume reads everything. `save_checkpoint`/`load_checkpoint` live in a **neutral module** (the
+  same reasoning that put `TrainingTuple` in `training_types`) so `self_play`/`evaluation` never
+  import `Trainer`. `load` fails loudly on a format-version mismatch.
+- **Evidence level:** Principled — the checkpoint store is a cross-cutting seam (§4) consumed by three
+  modules; the rich superset format means one artifact serves publish + resume, and pairing it with
+  the ReplayBuffer snapshot at the same generation (`replay-buffer.md` §5) makes resume consistent.
+- **Alternatives:** Lean weights-only (can't resume optimizer momentum/RNG — makes the buffer's
+  save/load resume story only half-work); two artifacts (published vs resume — clean but two formats).
+- **REVISIT trigger:** A cross-version checkpoint migration story if Phase-1 checkpoints ever need to
+  outlive a schema change (deferred — they're disposable/per-stage today).
+- **Impact: Med** — the format is depended on by Evaluation + warm-start, so it is awkward to change
+  after checkpoints exist; getting it right now is the point.
+
+### 12.3 Masked soft-target cross-entropy for the policy loss (the 0*(-inf) NaN guard)
+- **Choice:** Densify sparse sigma-bar to a dense `[n, A]` target, then compute
+  `-(sigma_bar * log_softmax(logits)).sum(-1).mean()` — but `masked_fill` the illegal log-probs to 0
+  **before** the multiply. The CVPN emits `-inf` at illegal actions, and the naive product computes
+  `0 * (-inf) = NaN` (IEEE-754) at every illegal action, which poisons backprop and kills training.
+- **Evidence level:** Principled — sigma-bar is already 0 on illegal actions, so the fill value is
+  annihilated by the zero target; the gradient is provably `(softmax - sigma-bar)` on legal logits and
+  exactly 0 on illegal ones (signal-free). Reuses the same `action_mask` the net used; every emitted
+  tuple has >=2 legal actions (forced decisions skipped), so the log_softmax normalizer is finite.
+- **Alternatives:** Sparse-gather CE (gather log-probs only at legal support indices — structurally
+  can't hit the trap, but needs ragged-batch index bookkeeping); naive unmasked CE (the NaN bug).
+- **REVISIT trigger:** None — verified by a unit test (no NaN with mostly-illegal masks).
+- **Impact: Med** — a correctness fix; the plan's stated "densify then CE" had a latent NaN bug.
+
+### 12.4 Two configs (TrainerConfig + TrainLoopConfig), and "generation" defined
+- **Choice:** `TrainerConfig` (Pydantic) holds learner knobs (lr, weight_decay, batch_size, value/
+  policy weights, device); `TrainLoopConfig` (Pydantic) holds loop knobs (games_per_generation,
+  train_steps_per_generation, warmup_threshold, checkpoint_interval, n_generations, buffer_capacity,
+  checkpoint_dir, master_seed) and composes `SelfPlayConfig`. One **generation** = play G games into
+  the buffer -> do M gradient steps -> publish a checkpoint.
+- **Evidence level:** Principled — the config split mirrors the learner/driver boundary (12.1); Pydantic
+  is the architecture-endorsed config style for the Trainer (§3.8). The hot-path-dataclass rule does
+  not apply to config objects.
+- **Alternatives:** One combined `TrainingConfig` (the toy shape — mixes the two concerns the 12.1
+  split just separated).
+- **Impact: Low** — config ergonomics, easily reshaped.
+
+### 12.5 AdamW with `weight_decay` default 0.0
+- **Choice:** Optimizer is AdamW so the architecture's `lambda*||theta||^2` is available as the
+  `weight_decay` knob, but it defaults **off** — matching the proven poker toy (plain Adam, no decay).
+- **Evidence level:** Empiricism-first — Phase-1 runs are short and the net is small; regularization
+  may be unnecessary or slow early learning. Turn it on (one knob) only if a stage shows measured
+  overfitting. Validate the loop learns at all before adding regularization pressure / a confound.
+- **Alternatives:** `weight_decay=1e-4` default (honors the formula literally; adds a debugging confound
+  on Stage 0); explicit `lambda*||theta||^2` term (couples badly with Adam's adaptivity — AdamW exists
+  precisely for this).
+- **REVISIT trigger:** A later curriculum stage overfitting.
+- **Impact: Low** — a default flip behind an existing knob.
+
+### 12.6 Value target = search-refined value (not z); z logged as a diagnostic
+- **Choice:** The value loss is `MSE(v_hat, tuple.value)` toward the search-refined value
+  (bootstrapping). The final game result `z` is logged only as a per-generation `z`-vs-`value`
+  correlation diagnostic, never the regression target. Confirms/reuses §8.4.
+- **Evidence level:** Principled — restates the SelfPlay decision (§8.4) at the consuming end; the
+  diagnostic keeps the door open to a future z-blend/TD target without making z a target now.
+- **Impact: Low** — a logging line; the substantive decision is §8.4.
+
+---
+
 ## Summary by Impact
 
 | Impact | Count | Key items |
 |--------|-------|-----------|
 | **High** | 4 | Transformer as backbone (1.1), top-k action abstraction (9.7), conditional belief sampler design (10.1), per-slot vs joint candidates (10.2) |
-| **Med** | 19 | d_model (1.2), n_layers (1.3), move attention pool (3.1), no derived features (5.5), flat joint action space (6.1), replay buffer strategy (8.1), loss weights (8.2), value target + z-tag (8.4), forced-decision skip (8.7), validation curriculum (8.8), GT-CFR-direct for Phase 1 (9.1), expansion budget (9.2), chance bucketing (9.3), MCCFR samples (9.4), top-K candidates (9.5), simultaneous turn-node (9.6), chance fan-out K=5 (9.8), full multi-turn growth (9.9), inner-loop budgets (9.10) |
+| **Med** | 22 | d_model (1.2), n_layers (1.3), move attention pool (3.1), no derived features (5.5), flat joint action space (6.1), replay buffer strategy (8.1), loss weights (8.2), value target + z-tag (8.4), forced-decision skip (8.7), validation curriculum (8.8), GT-CFR-direct for Phase 1 (9.1), expansion budget (9.2), chance bucketing (9.3), MCCFR samples (9.4), top-K candidates (9.5), simultaneous turn-node (9.6), chance fan-out K=5 (9.8), full multi-turn growth (9.9), inner-loop budgets (9.10), learner+driver split (12.1), checkpoint format (12.2), masked policy CE (12.3) |
 | **Med (value head)** | 1 | Value-head combination function (10.3) |
-| **Low** | 23 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), action sampling temperature (8.5), tuple ObsBundle + sparse σ̄ (8.6), single-process + max_decisions cap (8.9), ReplayBuffer mechanics (8.10–8.15, incl. save/load 8.14 = Low–Med), system design (11.1–11.2) |
+| **Low** | 26 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), action sampling temperature (8.5), tuple ObsBundle + sparse σ̄ (8.6), single-process + max_decisions cap (8.9), ReplayBuffer mechanics (8.10–8.15, incl. save/load 8.14 = Low–Med), system design (11.1–11.2), two configs + generation (12.4), AdamW weight_decay=0 (12.5), value target not z (12.6) |

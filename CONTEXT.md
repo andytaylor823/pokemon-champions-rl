@@ -214,6 +214,26 @@ How much a best-response opponent could beat your current strategy by. Computed 
 _Avoid_: Loss (training loss is a different metric), weakness
 _See_: `docs/architecture/gt-cfr-theory.md` §2; `docs/research/article_summary_5.md` "Deep CFR — How the Network Learns Regret"
 
+**Generation**:
+One outer-loop cycle: play G self-play games into the replay buffer, do M gradient steps, then publish one checkpoint. The unit of training progress and checkpoint cadence.
+_Avoid_: Epoch (implies a full pass over a fixed dataset; the buffer is a sliding window), iteration (overloaded with inner-loop CFR iterations)
+_See_: `docs/plans/trainer.md` §4; `docs/vibes-decisions.md` §12.4
+
+**Training driver**:
+The thin orchestrator that runs the generation loop — pumps SelfPlay output into the replay buffer, gates the warmup threshold, calls the Trainer, and pairs each checkpoint with a buffer snapshot. Distinct from the Trainer, which is only the learner (net + optimizer + one gradient step).
+_Avoid_: Trainer (the Trainer is just the learner), orchestrator (fine as a synonym; "driver" is canonical)
+_See_: `docs/plans/trainer.md` §2, §4; `docs/vibes-decisions.md` §12.1
+
+**Checkpoint**:
+A published network snapshot: the weights plus the CVPNConfig needed to rebuild the net, plus optimizer + RNG state for exact resume. Written by the Trainer once per generation; consumed by SelfPlay (warm-start) and Evaluation (head-to-head against frozen prior checkpoints).
+_Avoid_: Model save; snapshot ("snapshot" is the replay buffer's persisted contents)
+_See_: `docs/plans/trainer.md` §3; `docs/architecture/repo-architecture.md` §4; `docs/vibes-decisions.md` §12.2
+
+**Warmup threshold**:
+The minimum number of tuples in the replay buffer before the first gradient step. Owned by the training driver, not the buffer — the buffer only enforces "don't sample more than you hold."
+_Avoid_: Burn-in
+_See_: `docs/plans/trainer.md` §4; `docs/plans/replay-buffer.md` §3; `docs/vibes-decisions.md` §8.11
+
 ### Build Phases
 
 **Phase 1 (pit-stop)**:

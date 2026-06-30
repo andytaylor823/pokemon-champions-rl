@@ -43,7 +43,7 @@ markers = [
 # them without any sys.path manipulation in the tests.
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["sim_client", "action_space", "vocab", "obs_bundle", "encoder", "cvpn", "training_types", "replay_buffer"]
+py-modules = ["sim_client", "action_space", "vocab", "obs_bundle", "encoder", "cvpn", "training_types", "replay_buffer", "checkpoint", "trainer", "train_loop", "self_play", "curriculum", "state_types"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -134,4 +134,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["meta_priors", "sim_client", "action_space", "vocab", "obs_bundle", "encoder", "cvpn", "search", "scripts", "toy_examples"]
+known-first-party = ["meta_priors", "sim_client", "action_space", "vocab", "obs_bundle", "encoder", "cvpn", "search", "scripts", "toy_examples", "checkpoint", "trainer", "train_loop", "self_play", "curriculum", "state_types", "training_types", "replay_buffer"]

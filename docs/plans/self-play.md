@@ -168,7 +168,8 @@ respective σ̄ in the same solve.
 
 The training tuple is the **stable boundary** between the inner and outer loops (the GT-CFR
 analogue of AlphaZero's `(state, π, z)`; `repo-architecture.md` §3.7). One frozen dataclass
-(per `agent/overview.mdc`: dataclasses over Pydantic for hot-path internals):
+(per `agent/overview.mdc`: dataclasses over Pydantic for hot-path internals), now defined in the
+shared `src/training_types.py` rather than this module (see §12 and `replay-buffer.md` §8):
 
 ```python
 @dataclass(frozen=True)
@@ -352,9 +353,17 @@ win-rate on the curriculum §6.2).
 
 ## 12. Module shape
 
+> **Seam-type relocation (from the ReplayBuffer grilling, `replay-buffer.md` §8, vibes 8.15).**
+> `TrainingTuple` / `SparsePolicy` / `TupleMeta` are **extracted to a new `src/training_types.py`**
+> so the inner↔outer seam sits on neutral ground that `self_play`, `replay_buffer`, and `trainer`
+> all import. `self_play.py` re-imports them from there; behavior is unchanged.
+
 ```
+src/training_types.py
+  TrainingTuple, SparsePolicy, TupleMeta   — frozen dataclasses (the outer-loop seam; extracted from self_play.py)
+
 src/self_play.py
-  TrainingTuple, SparsePolicy, TupleMeta   — frozen dataclasses (the outer-loop seam)
+  (imports TrainingTuple, SparsePolicy, TupleMeta from training_types)
   MatchupSource (Protocol) + CurriculumMatchupSource / curated team pools
   SelfPlayConfig                           — frozen dataclass (temperature, max_decisions, seed, games, SearchConfig)
   run(net, matchup_source, config) -> Iterator[TrainingTuple]   — the game loop (generator)

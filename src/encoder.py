@@ -35,7 +35,8 @@ NUM_STATUS = 7
 _STATUS_MAP = {"brn": 0, "par": 1, "slp": 2, "frz": 3, "tox": 4, "psn": 5}
 
 NUM_NATURES = 25
-NUM_MOVE_FEATURES = 8  # pp_fraction + disabled flag = 2 per move x 4 moves
+NUM_MOVE_SLOTS = 4  # moves per Pokémon (hard game constant)
+NUM_MOVE_FEATURES = 2 * NUM_MOVE_SLOTS  # pp_fraction + disabled flag per move
 
 NUM_WEATHERS = 4
 NUM_TERRAINS = 4
@@ -82,7 +83,7 @@ def encode(
     species_ids = torch.zeros(n_tokens, dtype=torch.long)
     ability_ids = torch.zeros(n_tokens, dtype=torch.long)
     item_ids = torch.zeros(n_tokens, dtype=torch.long)
-    move_ids = torch.zeros(n_tokens, 4, dtype=torch.long)
+    move_ids = torch.zeros(n_tokens, NUM_MOVE_SLOTS, dtype=torch.long)
     belief_weight = torch.ones(n_tokens)  # 1.0 for Phase 1
     slot_id = torch.zeros(n_tokens, dtype=torch.long)
 
@@ -169,9 +170,9 @@ def _nature_onehot(mon: PokemonSnapshot) -> torch.Tensor:
 
 
 def _move_pp_flags(mon: PokemonSnapshot) -> torch.Tensor:
-    """Per-move pp_fraction + disabled flag (4 moves x 2). [8]"""
+    """Per-move pp_fraction + disabled flag (NUM_MOVE_SLOTS moves x 2). [NUM_MOVE_FEATURES]"""
     vec = torch.zeros(NUM_MOVE_FEATURES)
-    for i in range(4):
+    for i in range(NUM_MOVE_SLOTS):
         if i < len(mon.moves):
             move = mon.moves[i]
             vec[i * 2] = move.pp / max(move.maxpp, 1)
@@ -232,9 +233,9 @@ def _encode_pokemon_features(mon: PokemonSnapshot, is_opponent: bool = False) ->
 
 
 def _encode_move_ids(moves: list[MoveSnapshot]) -> torch.Tensor:
-    """Encode move slot IDs into an int64 tensor [4]."""
-    ids = torch.zeros(4, dtype=torch.long)
-    for i, move in enumerate(moves[:4]):
+    """Encode move slot IDs into an int64 tensor [NUM_MOVE_SLOTS]."""
+    ids = torch.zeros(NUM_MOVE_SLOTS, dtype=torch.long)
+    for i, move in enumerate(moves[:NUM_MOVE_SLOTS]):
         ids[i] = MOVE_VOCAB.encode(move.id)
     return ids
 
@@ -420,3 +421,9 @@ ENTITY_FEATURE_DIM: int = _encode_pokemon_features(_EMPTY_MON).shape[0]
 FIELD_FEATURE_DIM: int = _encode_field(_EMPTY_FIELD).shape[0]
 SIDE_FEATURE_DIM: int = _encode_side(_EMPTY_SIDE).shape[0]
 SCALAR_FEATURE_DIM: int = _encode_scalars(_EMPTY_SNAPSHOT, _EMPTY_VIEW, "p1").shape[0]
+
+# The encoder's schema identity, read live by ReplayBuffer's load guard (replay_buffer.py
+# §6). The derived dim constants above auto-catch any *width* change. ENCODER_SCHEMA_VERSION
+# is the manual companion: bump it on a semantic-but-same-width change the dims cannot see
+# (e.g. reordering or re-meaning features within a fixed F), which invalidates a saved buffer.
+ENCODER_SCHEMA_VERSION: int = 1

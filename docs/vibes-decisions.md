@@ -255,6 +255,92 @@
 - **REVISIT trigger:** If the cap ever fires in normal play, raise it / investigate; revisit parallelism when self-play throughput is the measured bottleneck.
 - **Impact: Low** — a safety net + a deferred scaling decision; neither affects correctness.
 
+### 8.10 ReplayBuffer = thin `deque(maxlen)` container (storage + boundary)
+- **Choice:** The `ReplayBuffer` is a **thin FIFO container** — a `collections.deque(maxlen=capacity)`
+  of `TrainingTuple` (per-tuple eviction, capacity in tuples). `sample(n)` returns a plain
+  `list[TrainingTuple]`; **collation (`collate_obs_bundles`), sparse→dense σ̄, and device placement
+  are the Trainer's job**, not the buffer's (`replay-buffer.md` §2–§4).
+- **Evidence level:** Convention + deletion-test reasoning — the literal poker-toy pattern
+  (`deque[TrainingTuple](maxlen=...)`), scaled up; keeping batching in the Trainer means the buffer
+  never depends on the encoder schema or `A`.
+- **Alternatives:** Buffer returns ready-to-train batched tensors (couples it to `ObsBundle`/`A`); a
+  shared `collate_training_tuples` helper; a pre-allocated columnar arena (premature for Phase-1
+  scale).
+- **REVISIT trigger:** If batching the deque is ever shown to be the throughput bottleneck, consider
+  a columnar arena behind the same interface.
+- **Impact: Low** — a small, swappable container behind a tiny stable interface.
+
+### 8.11 Sampling: uniform, without-replacement, seeded; warmup lives in the Trainer
+- **Choice:** `sample(n)` is uniform, without replacement within a batch, and seeded for
+  reproducibility (consistent with SelfPlay's `master_seed`). The buffer exposes `__len__` and
+  **raises `ValueError` on over-ask** (`n > len`); the "wait until ≥ N tuples before the first
+  gradient step" warmup threshold is a **Trainer/orchestrator** knob, not the buffer's
+  (`replay-buffer.md` §3).
+- **Evidence level:** Uniform+FIFO is fixed by §8.1; the over-ask-raises / warmup-in-caller split is
+  separation-of-concerns reasoning (mechanism in the buffer, training-schedule policy in the caller).
+- **Alternatives:** Buffer self-guards (owns a min-size, refuses early, clamps over-ask) — bakes a
+  training-schedule opinion into storage; clamp-and-return-fewer like the toys — silently undersizes
+  early batches.
+- **REVISIT trigger:** Prioritized replay (weight by surprise/TD-error) is the §8.1 REVISIT; additive
+  behind the same `sample(n)`.
+- **Impact: Low** — a standard sampling contract; all variants are tunable behind the interface.
+
+### 8.12 ReplayBuffer is single-threaded; the simultaneous-access seam is deferred
+- **Choice:** No locking in the first build. Phase 1 plays games and trains **in turns**, never
+  simultaneously, so concurrency machinery would guard a non-existent situation. The eventual
+  concurrent shape (N self-play workers → one buffer) is most likely **multi-process** (§11.3), where
+  an in-process lock is the wrong primitive (a shared queue/server is the right later mechanism)
+  (`replay-buffer.md` §7).
+- **Evidence level:** Pragmatic — follows directly from §8.9 (single-process default) and §11.3
+  (parallelism deferred to measured bottleneck).
+- **Alternatives:** Add a `threading.Lock` now (premature; possibly the wrong tool); build the
+  multi-process buffer now (premature — mechanism unchosen).
+- **REVISIT trigger:** When self-play throughput becomes the measured bottleneck and generation +
+  training run concurrently (architecture §4).
+- **Impact: Low** — deferring it changes nothing about Phase-1 correctness.
+
+### 8.13 Fresh buffer per curriculum stage (no cross-stage data bleed)
+- **Choice:** A brand-new `ReplayBuffer` is constructed for each validation-curriculum stage; no
+  `clear()` method, and no age-based purge within a stage (the fixed FIFO window handles staleness)
+  (`replay-buffer.md` §12).
+- **Evidence level:** Principled — each stage is an independent from-scratch experiment (§8.8) with
+  different teams and a fresh net, so old-stage positions are off-distribution and were scored by a
+  different net; even warm-start carries weights, not data.
+- **Alternatives:** A single shared buffer across all stages (rejected — mixes off-distribution,
+  mis-valued data and confounds the experiment); a `clear()` method (more API surface for no gain).
+- **REVISIT trigger:** None expected in Phase 1.
+- **Impact: Low** — a lifecycle convention; correctness-preserving.
+
+### 8.14 ReplayBuffer `save`/`load` in the first build, with a fail-loud schema guard
+- **Choice:** The buffer ships disk persistence **now** (`torch.save` of the deque contents +
+  capacity + RNG state + a schema fingerprint), so a long single-stage run can resume. `load`
+  **fails loudly** — it raises on a schema-fingerprint mismatch rather than silently loading
+  stale-schema tensors (`replay-buffer.md` §5–§6).
+- **Evidence level:** The persistence-now choice was a deliberate opt-in over the "defer it" default
+  (Phase-1 runs are short and disposable). The fail-loud guard is principled — a pre-encoded buffer
+  is invalidated by encoder-schema changes (§8.6), so a silent reload would corrupt training.
+- **Alternatives:** No persistence in Phase 1 (the original recommendation — simpler, but no
+  crash-resume); warn-and-discard or load-anyway on mismatch (both risk silent data loss/corruption).
+- **REVISIT trigger:** If buffer persistence proves unused churn in practice, drop it; if cross-version
+  resume is ever wanted, add a migration story (deferred — `replay-buffer.md` §14).
+- **Cross-module dependency:** the fail-loud guard needs `encoder`/`action_space` to expose a stable
+  schema/version constant — flagged into `encoder.md` and `action-space.md`.
+- **Impact: Low–Med** — persistence adds real surface area (format, versioning, encoder-schema
+  coupling) beyond a minimal in-memory buffer; the fail-loud guard is the correctness safeguard for it.
+
+### 8.15 `TrainingTuple` seam types extracted to `src/training_types.py`
+- **Choice:** Move `TrainingTuple` / `SparsePolicy` / `TupleMeta` out of `self_play.py` into a new
+  neutral `src/training_types.py` that `self_play`, `replay_buffer`, and `trainer` all import
+  (`replay-buffer.md` §8).
+- **Evidence level:** Principled — `TrainingTuple` is "the stable seam between the inner and outer
+  loops" (architecture §3.7); a seam type belongs on neutral ground, not inside the producer module.
+- **Alternatives:** Leave it in `self_play.py` and import from there (consumers depend on the
+  producer — a minor smell); defer the extraction until the Trainer is built (a temporary
+  import-from-producer).
+- **REVISIT trigger:** None expected.
+- **Impact: Low** — a small one-time refactor (move three frozen dataclasses + update imports);
+  behavior unchanged.
+
 ---
 
 ## 9. Search & Algorithm Choices (not yet built — decisions from plans)
@@ -368,4 +454,4 @@
 | **High** | 4 | Transformer as backbone (1.1), top-k action abstraction (9.7), conditional belief sampler design (10.1), per-slot vs joint candidates (10.2) |
 | **Med** | 19 | d_model (1.2), n_layers (1.3), move attention pool (3.1), no derived features (5.5), flat joint action space (6.1), replay buffer strategy (8.1), loss weights (8.2), value target + z-tag (8.4), forced-decision skip (8.7), validation curriculum (8.8), GT-CFR-direct for Phase 1 (9.1), expansion budget (9.2), chance bucketing (9.3), MCCFR samples (9.4), top-K candidates (9.5), simultaneous turn-node (9.6), chance fan-out K=5 (9.8), full multi-turn growth (9.9), inner-loop budgets (9.10) |
 | **Med (value head)** | 1 | Value-head combination function (10.3) |
-| **Low** | 17 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), action sampling temperature (8.5), tuple ObsBundle + sparse σ̄ (8.6), single-process + max_decisions cap (8.9), system design (11.1–11.2) |
+| **Low** | 23 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), action sampling temperature (8.5), tuple ObsBundle + sparse σ̄ (8.6), single-process + max_decisions cap (8.9), ReplayBuffer mechanics (8.10–8.15, incl. save/load 8.14 = Low–Med), system design (11.1–11.2) |

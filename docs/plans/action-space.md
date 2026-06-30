@@ -17,3 +17,8 @@ Phase 1 implementation complete. Module: `src/action_space.py`.
 ## Scope
 
 Flat joint action space (`A = 1089`): 360 team-preview orderings + 729 move-phase joint actions (27 per-slot actions x 27). Legality expressed as a boolean mask. Per-slot decomposition: 4 moves x 3 targets = 12 base + 12 mega + 2 switches + 1 pass = 27. Translation between canonical index and Showdown choice strings (`action_to_choice_contextual`, `choice_string_to_index`) lives in this module. The CVPN policy head is a single flat `[A]` softmax over this space.
+
+> **Flag (from the ReplayBuffer design, `replay-buffer.md` §6).** `A` (already a module constant) is
+> part of the **schema fingerprint** that `ReplayBuffer.load` checks against to fail loudly on a
+> stale-schema reload (a stored `action_mask` is `[A]`-shaped). Keep `A` exposed as a stable,
+> importable constant so the buffer's persistence guard can reference it.

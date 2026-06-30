@@ -24,50 +24,12 @@ from obs_bundle import ObsBundle
 from search import SearchConfig, search
 from sim_client import SimClient, SimError
 from state_types import StateView
+from training_types import SparsePolicy, TrainingTuple, TupleMeta
 
 logger = logging.getLogger(__name__)
 
 # Max retry attempts when sim.step raises SimError (targeting discrepancy)
 _MAX_STEP_RETRIES = 10
-
-
-# ---------------------------------------------------------------------------
-# Data types (frozen dataclasses per repo convention for hot-path internals)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SparsePolicy:
-    """Average strategy stored sparse: action indices and their probabilities."""
-
-    indices: tuple[int, ...]
-    probs: tuple[float, ...]
-
-
-@dataclass(frozen=True)
-class TupleMeta:
-    """Provenance metadata for a training tuple."""
-
-    generation: int
-    game_id: int
-    decision_idx: int
-    phase: str
-    side: str
-
-
-@dataclass(frozen=True)
-class TrainingTuple:
-    """One training sample: the stable boundary between inner and outer loops.
-
-    Analogous to AlphaZero's (state, pi, z) but with bootstrapped search value
-    as the primary value target and the game result z as a side label.
-    """
-
-    beta: ObsBundle
-    value: float
-    policy: SparsePolicy
-    z: float
-    meta: TupleMeta
 
 
 @dataclass(frozen=True)

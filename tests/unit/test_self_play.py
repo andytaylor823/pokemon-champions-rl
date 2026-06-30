@@ -18,9 +18,6 @@ from action_space import forced_actions
 from self_play import (
     CurriculumMatchupSource,
     SelfPlayConfig,
-    SparsePolicy,
-    TrainingTuple,
-    TupleMeta,
     _PendingTuple,
     _advance,
     _is_forced,
@@ -29,6 +26,7 @@ from self_play import (
     _sample_and_step,
     run,
 )
+from training_types import SparsePolicy, TrainingTuple, TupleMeta
 
 
 # ---------------------------------------------------------------------------

@@ -150,4 +150,20 @@ describe("E2E: Charizard-Y vs support team (from test-battle.ts)", () => {
     expect(html).toContain("replay-embed.js");
     expect(html).toContain("|win|");
   });
+
+  it("correctly reports p2 as winner when p2 has the offense team", async () => {
+    // Swap teams: p1 = support (E2E_TEAM_B), p2 = offense (TEAM_A)
+    const runner = new BattleRunner({
+      formatId: "gen9championsvgc2026regma",
+      teamA: teamB,
+      teamB: teamA,
+      seed: [1, 2, 3, 4],
+    });
+
+    const result = await runner.run(teamBStrategy, teamAStrategy);
+
+    expect(result.winner).toBe("p2");
+    expect(result.p2Remaining).toBeGreaterThan(0);
+    expect(result.turns).toBeGreaterThan(0);
+  });
 });

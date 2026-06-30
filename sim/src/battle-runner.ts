@@ -7,7 +7,7 @@ const {
 const { BattlePlayer } = require("pokemon-showdown/dist/sim/battle-stream");
 const { Teams } = require("pokemon-showdown");
 
-class StrategyPlayer extends BattlePlayer {
+export class StrategyPlayer extends BattlePlayer {
   private strategy: Strategy;
   private megaUsed = false;
 
@@ -55,22 +55,11 @@ export class BattleRunner {
     const p2 = new StrategyPlayer(streams.p2, p2Strategy);
 
     const log: string[] = [];
-    let winner: BattleResult["winner"] = null;
-    let turns = 0;
 
     const logPromise = (async () => {
       for await (const chunk of streams.omniscient) {
         for (const line of (chunk as string).split("\n")) {
           log.push(line);
-
-          if (line.startsWith("|win|")) {
-            const winnerName = line.slice(5);
-            winner = winnerName === "Player 1" ? "p1" : "p2";
-          } else if (line.startsWith("|tie")) {
-            winner = "tie";
-          } else if (line.startsWith("|turn|")) {
-            turns = parseInt(line.slice(6), 10);
-          }
         }
       }
     })();
@@ -99,6 +88,7 @@ export class BattleRunner {
 
     await logPromise;
 
+    const { winner, turns } = parseOutcome(log);
     const p1Remaining = countRemaining(log, "p1");
     const p2Remaining = countRemaining(log, "p2");
 
@@ -106,7 +96,35 @@ export class BattleRunner {
   }
 }
 
-function countRemaining(log: string[], player: string): number {
+/**
+ * Derive the final winner and turn count from an omniscient battle log.
+ *
+ * Last-wins: the value of the final `|win|`/`|tie` and `|turn|` lines. The
+ * winner mapping relies on the runner naming its players "Player 1"/"Player 2"
+ * (see `run()`); any name other than "Player 1" maps to "p2".
+ */
+export function parseOutcome(log: string[]): {
+  winner: BattleResult["winner"];
+  turns: number;
+} {
+  let winner: BattleResult["winner"] = null;
+  let turns = 0;
+
+  for (const line of log) {
+    if (line.startsWith("|win|")) {
+      const winnerName = line.slice(5);
+      winner = winnerName === "Player 1" ? "p1" : "p2";
+    } else if (line.startsWith("|tie")) {
+      winner = "tie";
+    } else if (line.startsWith("|turn|")) {
+      turns = parseInt(line.slice(6), 10);
+    }
+  }
+
+  return { winner, turns };
+}
+
+export function countRemaining(log: string[], player: string): number {
   let teamSize = 0;
   const fainted = new Set<string>();
 

@@ -325,5 +325,7 @@ if (require.main === module) {
 // Public test surface: drive everything through `dispatch` (the same entry the
 // stdio loop uses), and `resetState` to isolate cases. Internals — the handle
 // registries and engine helpers — stay private; inspect state via the `stats`
-// and `view` commands.
-export { dispatch, resetState };
+// and `view` commands. The pure decision helpers `phaseOf`/`utilityOf` are
+// exported too: their tie / fallthrough branches are unreachable through a real
+// battle, so they are unit-tested directly against stub battle objects.
+export { dispatch, resetState, phaseOf, utilityOf };

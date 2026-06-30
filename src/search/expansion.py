@@ -94,9 +94,7 @@ def _cell_choices(node: TurnNode, i: int, j: int) -> dict[str, str]:
     for side, idx in (("p1", i), ("p2", j)):
         if side in node.to_move:
             legal_req = node.view.legal.get(side) if node.view else None
-            choices[side] = action_to_choice_contextual(
-                node.info[side].actions[idx], legal_req
-            )
+            choices[side] = action_to_choice_contextual(node.info[side].actions[idx], legal_req)
     return choices
 
 
@@ -129,10 +127,7 @@ def _collapse_forced(
         forced = forced_actions(view.legal, view.to_move, view.phase)
         if forced is None:
             break
-        choices = {
-            s: action_to_choice_contextual(idx, view.legal.get(s))
-            for s, idx in forced.items()
-        }
+        choices = {s: action_to_choice_contextual(idx, view.legal.get(s)) for s, idx in forced.items()}
         seed = _generate_seed()
         try:
             result = sim.step(handle, choices, seed)

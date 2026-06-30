@@ -17,7 +17,9 @@ export function generateReplayHtml(
   result: BattleResult,
   meta: ReplayMetadata
 ): string {
-  const logText = result.log.join("\n");
+  // Neutralize </script sequences so they don't prematurely close the
+  // <script type="text/plain"> tag when the replay HTML is opened.
+  const logText = result.log.join("\n").replace(/<\/script/gi, "<\\/script");
   const title = `${meta.formatId}: ${meta.p1} vs. ${meta.p2}`;
 
   return `<!DOCTYPE html>
@@ -57,6 +59,11 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Strip path separators and non-filename-safe chars from a player name. */
+function slugify(s: string): string {
+  return s.replace(/[^A-Za-z0-9_-]/g, "_").replace(/_{2,}/g, "_");
+}
+
 /**
  * Write a replay HTML file to disk. Returns the absolute path written.
  *
@@ -74,7 +81,7 @@ export function saveReplay(
       __dirname,
       "..",
       "replays",
-      `${meta.p1}-vs-${meta.p2}-${Date.now()}.html`
+      `${slugify(meta.p1)}-vs-${slugify(meta.p2)}-${Date.now()}.html`
     );
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });

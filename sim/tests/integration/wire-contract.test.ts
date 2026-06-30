@@ -24,7 +24,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { dispatch, resetState } from "../../src/sim-worker";
-import { TEAM_A, TEAM_B } from "../fixtures/teams";
+import { freshBattle, advancePastTeamPreview } from "../helpers/worker-harness";
 
 // Repo-root fixture shared with the Python suite.
 //   sim/tests/integration -> ../../.. -> repo root
@@ -143,20 +143,17 @@ function assertStateViewShape(v: any, label: string) {
 /** Generate live team_preview and move_phase views via the worker. */
 function liveViews() {
   resetState();
-  const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+  const battle = freshBattle();
   const team_preview = dispatch({ cmd: "view", handle: battle.handle }).view;
-  const step = dispatch({
-    cmd: "step", handle: battle.handle,
-    choices: { p1: "team 1234", p2: "team 1234" },
-    seed: [10, 20, 30, 40],
-  });
+  const step = advancePastTeamPreview(battle.handle);
   expect(step.view.phase).toBe("move");
   return { team_preview, move_phase: step.view };
 }
 
-describe("wire contract: StateView schema conformance", () => {
-  const live = liveViews();
+// Built once and shared across all describes — these are read-only views.
+const live = liveViews();
 
+describe("wire contract: StateView schema conformance", () => {
   it("the fixture has the expected scenarios", () => {
     expect(Object.keys(FIXTURE).sort()).toEqual(["move_phase", "team_preview"]);
   });
@@ -173,8 +170,6 @@ describe("wire contract: StateView schema conformance", () => {
 });
 
 describe("wire contract: live output matches fixture topology", () => {
-  const live = liveViews();
-
   /** Compare the fixed-schema key sets at each level between two views. */
   function expectSameTopology(a: any, b: any, label: string) {
     expect(sortedKeys(a), `${label} top-level`).toEqual(sortedKeys(b));
@@ -199,8 +194,6 @@ describe("wire contract: live output matches fixture topology", () => {
 });
 
 describe("wire contract: JSON wire-safety", () => {
-  const live = liveViews();
-
   /** Recursively collect every numeric leaf for finiteness checks. */
   function collectNumbers(x: any, acc: number[] = []): number[] {
     if (typeof x === "number") acc.push(x);

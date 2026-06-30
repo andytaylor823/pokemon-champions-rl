@@ -98,6 +98,25 @@ describe("generateReplayHtml", () => {
     });
     expect(html).toContain("gen9championsvgc2026regma");
   });
+
+  it("embeds log content containing </script> without escaping (documents limitation)", () => {
+    const result = minimalResult({
+      log: ["|turn|1", "</script><script>alert(1)</script>", "|win|Player 1"],
+    });
+    const html = generateReplayHtml(result, { formatId: "t", p1: "A", p2: "B" });
+    // The log is embedded raw in <script type="text/plain">. A literal </script>
+    // in the log terminates the tag prematurely. This documents current behavior.
+    expect(html).toContain("</script><script>alert(1)</script>");
+  });
+
+  it("single quotes in player names pass through unescaped", () => {
+    const html = generateReplayHtml(minimalResult(), {
+      formatId: "test", p1: "O'Brien", p2: "B",
+    });
+    expect(html).toContain("O'Brien");
+    expect(html).not.toContain("&#39;");
+    expect(html).not.toContain("&apos;");
+  });
 });
 
 describe("saveReplay", () => {
@@ -146,6 +165,19 @@ describe("saveReplay", () => {
       formatId: "test", p1: "A", p2: "B",
     }, dest);
 
+    expect(fs.existsSync(saved)).toBe(true);
+  });
+
+  it("uses default path under replays/ when no filePath provided", () => {
+    const saved = saveReplay(minimalResult(), {
+      formatId: "test", p1: "DefaultA", p2: "DefaultB",
+    });
+    tempFiles.push(saved);
+
+    expect(path.isAbsolute(saved)).toBe(true);
+    expect(saved).toContain("replays");
+    expect(saved).toContain("DefaultA-vs-DefaultB-");
+    expect(saved).toMatch(/\.html$/);
     expect(fs.existsSync(saved)).toBe(true);
   });
 });

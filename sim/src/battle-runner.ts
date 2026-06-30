@@ -106,7 +106,7 @@ export class BattleRunner {
   }
 }
 
-function countRemaining(log: string[], player: string): number {
+export function countRemaining(log: string[], player: string): number {
   let teamSize = 0;
   const fainted = new Set<string>();
 

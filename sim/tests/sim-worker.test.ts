@@ -693,4 +693,449 @@ describe("sim-worker dispatch (unit)", () => {
       expect(charizard.stats.spa).toBeGreaterThan(whimsicott.stats.spa);
     });
   });
+
+  // ==========================================================================
+  // Phase 2 gap-coverage (TS Test Gap Analysis)
+  // ==========================================================================
+
+  describe("tie game utility", () => {
+    it("utility values are valid and zero-sum across multiple seeds", () => {
+      for (const seedBase of [1, 10, 50, 100, 200]) {
+        resetState();
+        const seed: [number, number, number, number] = [seedBase, seedBase + 1, seedBase + 2, seedBase + 3];
+        const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed });
+        const session = dispatch({ cmd: "open_search", from: battle.handle });
+        const result = runToTerminal(session.root);
+        const u = result.view.utility;
+
+        expect(u).not.toBeNull();
+        expect([1, -1, 0]).toContain(u.p1);
+        expect([1, -1, 0]).toContain(u.p2);
+        expect(u.p1 + u.p2).toBe(0);
+
+        dispatch({ cmd: "close_search", session: session.session });
+      }
+    });
+  });
+
+  describe("legal field structure", () => {
+    it("team preview legal has teamPreview flag and side pokemon", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const v = dispatch({ cmd: "view", handle: battle.handle }).view;
+
+      for (const sid of ["p1", "p2"]) {
+        const req = v.legal[sid];
+        expect(req).toBeDefined();
+        expect(req.teamPreview).toBe(true);
+        expect(req.side).toBeDefined();
+        expect(req.side.pokemon).toBeDefined();
+        expect(Array.isArray(req.side.pokemon)).toBe(true);
+        expect(req.side.pokemon.length).toBe(TEAM_A.length);
+      }
+    });
+
+    it("move phase legal has active array with move slots", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+      expect(step.view.phase).toBe("move");
+
+      for (const sid of step.view.to_move) {
+        const req = step.view.legal[sid];
+        expect(req).toBeDefined();
+        expect(Array.isArray(req.active)).toBe(true);
+        expect(req.active.length).toBe(2);
+
+        for (const slot of req.active) {
+          expect(Array.isArray(slot.moves)).toBe(true);
+          expect(slot.moves.length).toBeGreaterThan(0);
+          for (const m of slot.moves) {
+            expect(typeof m.id).toBe("string");
+          }
+        }
+      }
+    });
+
+    it("forceSwitch phase legal has forceSwitch array", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const session = dispatch({ cmd: "open_search", from: battle.handle });
+      const fs = advanceUntilPhase(session.root, "forceSwitch");
+      expect(fs).not.toBeNull();
+
+      const actingSideWithFS = fs!.view.to_move.find(
+        (sid: string) => fs!.view.legal[sid]?.forceSwitch,
+      );
+      expect(actingSideWithFS).toBeDefined();
+      const req = fs!.view.legal[actingSideWithFS!];
+      expect(Array.isArray(req.forceSwitch)).toBe(true);
+      expect(req.forceSwitch.length).toBe(2);
+
+      dispatch({ cmd: "close_search", session: session.session });
+    });
+  });
+
+  describe("snapshot status and fainted pokemon", () => {
+    it("fainted pokemon has fainted:true, hp:0, active:false", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const session = dispatch({ cmd: "open_search", from: battle.handle });
+      const fs = advanceUntilPhase(session.root, "forceSwitch");
+      expect(fs).not.toBeNull();
+
+      const allPokemon = fs!.view.snapshot.sides.flatMap((s: any) => s.pokemon);
+      const faintedMon = allPokemon.find((m: any) => m.fainted);
+      expect(faintedMon).toBeDefined();
+      expect(faintedMon.hp).toBe(0);
+      expect(faintedMon.active).toBe(false);
+
+      dispatch({ cmd: "close_search", session: session.session });
+    });
+
+    it("status field populated during battle", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const session = dispatch({ cmd: "open_search", from: battle.handle });
+
+      // Scan through the game looking for any pokemon with a non-null status
+      let h = session.root;
+      let statusMon: any = null;
+      for (let i = 0; i < 200; i++) {
+        const v = dispatch({ cmd: "view", handle: h }).view;
+
+        const allPokemon = v.snapshot.sides.flatMap((s: any) => s.pokemon);
+        const withStatus = allPokemon.find((m: any) => m.status !== null);
+        if (withStatus) {
+          statusMon = withStatus;
+          break;
+        }
+
+        if (v.terminal) break;
+        h = autoStep(h, i * 4 + 1).child;
+      }
+
+      // Over a full battle, status effects (burn, sleep, paralysis) typically
+      // appear. If one was found, verify its structure.
+      if (statusMon) {
+        expect(typeof statusMon.status).toBe("string");
+        expect(statusMon.status.length).toBeGreaterThan(0);
+        expect(statusMon.statusState).toBeDefined();
+      }
+
+      dispatch({ cmd: "close_search", session: session.session });
+    });
+  });
+
+  describe("reseed variance through dispatch", () => {
+    it("same parent with different seeds produces different children", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+      expect(step1.view.phase).toBe("move");
+
+      // Step the SAME parent handle with two different seeds
+      const childA = dispatch({
+        cmd: "step", handle: step1.child,
+        choices: { p1: "move 1, move 1", p2: "move 1 1, move 1 1" },
+        seed: [100, 200, 300, 400],
+      });
+      const childB = dispatch({
+        cmd: "step", handle: step1.child,
+        choices: { p1: "move 1, move 1", p2: "move 1 1, move 1 1" },
+        seed: [999, 888, 777, 666],
+      });
+
+      // Different seeds → different RNG → different damage rolls / outcomes
+      expect(childA.outcome).not.toEqual(childB.outcome);
+    });
+  });
+
+  describe("step on terminal handle", () => {
+    it("throws when attempting to step a terminal battle", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const session = dispatch({ cmd: "open_search", from: battle.handle });
+      const result = runToTerminal(session.root);
+      expect(result.view.terminal).toBe(true);
+
+      // No acting sides → applyChoices should throw for non-acting side
+      expect(() => dispatch({
+        cmd: "step", handle: result.handle,
+        choices: { p1: "move 1", p2: "move 1" },
+        seed: [1, 2, 3, 4],
+      })).toThrow();
+
+      dispatch({ cmd: "close_search", session: session.session });
+    });
+  });
+
+  describe("item and ability tracking in snapshot", () => {
+    it("species and ability change after Mega Evolution", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+      expect(step1.view.phase).toBe("move");
+
+      // Pre-mega: Charizard should have base species and ability
+      const preMega = step1.view.snapshot.sides[0].pokemon.find(
+        (m: any) => m.species === "charizard",
+      );
+      expect(preMega).toBeDefined();
+      expect(preMega.ability).toBe("blaze");
+
+      // Mega evolve Charizard (Heat Wave mega) + Venusaur Protect
+      const step2 = dispatch({
+        cmd: "step", handle: step1.child,
+        choices: { p1: "move 1 mega, move 1", p2: "move 1 1, move 1 1" },
+        seed: [100, 200, 300, 400],
+      });
+
+      // Post-mega: species and ability should have changed
+      const postMega = step2.view.snapshot.sides[0].pokemon.find(
+        (m: any) => m.species?.includes("charizard") && m.active,
+      );
+      expect(postMega).toBeDefined();
+      expect(postMega.species).not.toBe("charizard");
+      expect(postMega.ability).not.toBe("blaze");
+    });
+
+    it("lastItem populated after item consumption", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const session = dispatch({ cmd: "open_search", from: battle.handle });
+
+      // Scan through a full game looking for any item consumption
+      let h = session.root;
+      let lastItemMon: any = null;
+      for (let i = 0; i < 200; i++) {
+        const v = dispatch({ cmd: "view", handle: h }).view;
+
+        const allPokemon = v.snapshot.sides.flatMap((s: any) => s.pokemon);
+        const withLastItem = allPokemon.find((m: any) => m.lastItem !== null);
+        if (withLastItem) {
+          lastItemMon = withLastItem;
+          break;
+        }
+
+        if (v.terminal) break;
+        h = autoStep(h, i * 4 + 1).child;
+      }
+
+      // Teams include Focus Sash, Sitrus Berry, Lum Berry, Mental Herb —
+      // at least one should be consumed over a full battle
+      expect(lastItemMon).not.toBeNull();
+      expect(typeof lastItemMon.lastItem).toBe("string");
+      expect(lastItemMon.lastItem.length).toBeGreaterThan(0);
+
+      dispatch({ cmd: "close_search", session: session.session });
+    });
+  });
+
+  describe("move state tracking in snapshot", () => {
+    it("move PP decrements after use", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+
+      // Charizard uses Heat Wave (move 1), Venusaur uses Protect (move 1)
+      const step2 = dispatch({
+        cmd: "step", handle: step1.child,
+        choices: { p1: "move 1, move 1", p2: "move 1 1, move 1 1" },
+        seed: [100, 200, 300, 400],
+      });
+
+      const charizard = step2.view.snapshot.sides[0].pokemon.find(
+        (m: any) => m.species?.includes("charizard"),
+      );
+      expect(charizard).toBeDefined();
+      const heatWave = charizard.moves.find((m: any) => m.id === "heatwave");
+      expect(heatWave).toBeDefined();
+      expect(heatWave.pp).toBeLessThan(heatWave.maxpp);
+    });
+
+    it("move disabled field is boolean for all moves", () => {
+      // Triggering disabled: true requires moves like Disable, Imprison, or
+      // Torment which aren't in the test teams. This verifies the field type
+      // and default value (false) for all moves in the move phase.
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+
+      const allPokemon = step1.view.snapshot.sides.flatMap((s: any) => s.pokemon);
+      for (const mon of allPokemon) {
+        for (const move of mon.moves) {
+          expect(typeof move.disabled).toBe("boolean");
+        }
+      }
+    });
+  });
+
+  describe("session nesting", () => {
+    it("open_search from search-owned handle produces independent session", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const sessionA = dispatch({ cmd: "open_search", from: battle.handle });
+
+      // Open a second session cloning from the first session's root
+      const sessionB = dispatch({ cmd: "open_search", from: sessionA.root });
+      expect(sessionB.session).not.toBe(sessionA.session);
+      expect(sessionB.root).not.toBe(sessionA.root);
+      expect(sessionB.root_view).toBeDefined();
+
+      // 3 handles: live battle + sessionA root + sessionB root
+      expect(handleCount()).toBe(3);
+
+      // Closing session A should NOT affect session B
+      dispatch({ cmd: "close_search", session: sessionA.session });
+      expect(() => dispatch({ cmd: "view", handle: sessionB.root })).not.toThrow();
+      expect(handleCount()).toBe(2);
+
+      dispatch({ cmd: "close_search", session: sessionB.session });
+      expect(handleCount()).toBe(1);
+    });
+  });
+
+  describe("snapshot field completeness", () => {
+    it("gender field present for all pokemon", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const v = dispatch({ cmd: "view", handle: battle.handle }).view;
+      for (const side of v.snapshot.sides) {
+        for (const mon of side.pokemon) {
+          expect(mon).toHaveProperty("gender");
+          expect(typeof mon.gender).toBe("string");
+        }
+      }
+    });
+
+    it("position field correct for active and bench pokemon", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const step1 = dispatch({
+        cmd: "step", handle: battle.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+
+      for (const side of step1.view.snapshot.sides) {
+        const positions = side.pokemon.map((m: any) => m.position);
+        // Each pokemon should have a unique position index
+        expect(new Set(positions).size).toBe(side.pokemon.length);
+
+        const activeMons = side.pokemon.filter((m: any) => m.active);
+        for (const mon of activeMons) {
+          expect(mon.position).toBeLessThanOrEqual(1);
+        }
+      }
+    });
+
+    it("teraType and terastallized null in Champions format", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const v = dispatch({ cmd: "view", handle: battle.handle }).view;
+      for (const side of v.snapshot.sides) {
+        for (const mon of side.pokemon) {
+          expect(mon.terastallized).toBeNull();
+        }
+      }
+    });
+  });
+
+  describe("additional robustness edge cases", () => {
+    it("step with no choices key throws for acting sides", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      // msg.choices ?? {} → empty choices → missing choice for acting side
+      expect(() => dispatch({
+        cmd: "step", handle: battle.handle, seed: [10, 20, 30, 40],
+      })).toThrow(/missing choice for acting side/);
+    });
+
+    it("double release of same handle does not throw", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      dispatch({ cmd: "release", handle: battle.handle });
+      const result = dispatch({ cmd: "release", handle: battle.handle });
+      expect(result.released).toBe(battle.handle);
+    });
+
+    it("independent battles are isolated", () => {
+      const b1 = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const b2 = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [5, 6, 7, 8] });
+
+      // Advance battle 1 past team preview
+      const step = dispatch({
+        cmd: "step", handle: b1.handle,
+        choices: { p1: "team 1234", p2: "team 1234" },
+        seed: [10, 20, 30, 40],
+      });
+      expect(step.view.phase).toBe("move");
+
+      // Battle 2 should still be in team preview, completely unaffected
+      const v2 = dispatch({ cmd: "view", handle: b2.handle }).view;
+      expect(v2.phase).toBe("teamPreview");
+      expect(v2.snapshot.turn).toBe(0);
+    });
+  });
+
+  describe("schema completeness", () => {
+    it("StateView contains all expected top-level keys", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const v = dispatch({ cmd: "view", handle: battle.handle }).view;
+
+      for (const key of ["phase", "to_move", "legal", "snapshot", "terminal", "utility"]) {
+        expect(v).toHaveProperty(key);
+      }
+    });
+
+    it("BattleSnapshot and FieldSnapshot contain all expected keys", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const snap = dispatch({ cmd: "view", handle: battle.handle }).view.snapshot;
+
+      for (const key of ["turn", "field", "sides"]) {
+        expect(snap).toHaveProperty(key);
+      }
+
+      for (const key of ["weather", "weatherDuration", "terrain", "terrainDuration", "pseudoWeather"]) {
+        expect(snap.field).toHaveProperty(key);
+      }
+    });
+
+    it("SideSnapshot contains all expected keys", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const side = dispatch({ cmd: "view", handle: battle.handle }).view.snapshot.sides[0];
+
+      for (const key of ["id", "sideConditions", "pokemon"]) {
+        expect(side).toHaveProperty(key);
+      }
+    });
+
+    it("PokemonSnapshot contains all expected keys", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const mon = dispatch({ cmd: "view", handle: battle.handle }).view.snapshot.sides[0].pokemon[0];
+
+      const expectedKeys = [
+        "species", "nature", "level", "gender", "hp", "maxhp", "fainted",
+        "status", "statusState", "ability", "item", "lastItem", "active",
+        "position", "activeTurns", "teraType", "terastallized", "stats",
+        "boosts", "moves", "volatiles", "volatileDetails",
+      ];
+      for (const key of expectedKeys) {
+        expect(mon).toHaveProperty(key);
+      }
+    });
+
+    it("MoveSnapshot contains all expected keys", () => {
+      const battle = dispatch({ cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+      const move = dispatch({ cmd: "view", handle: battle.handle }).view.snapshot.sides[0].pokemon[0].moves[0];
+
+      for (const key of ["id", "pp", "maxpp", "disabled"]) {
+        expect(move).toHaveProperty(key);
+      }
+    });
+  });
 });

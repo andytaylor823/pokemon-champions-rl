@@ -9,6 +9,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as path from "node:path";
 import * as readline from "node:readline";
+import { TEAM_A, TEAM_B } from "../fixtures/teams";
 
 const WORKER_SCRIPT = path.resolve(__dirname, "../../src/sim-worker.ts");
 const SIM_CWD = path.resolve(__dirname, "../..");
@@ -165,5 +166,57 @@ describe("stdio protocol: shutdown", () => {
       w.proc.on("exit", (code) => resolve(code));
     });
     expect(exitCode).toBe(0);
+  });
+});
+
+describe("stdio protocol: battle commands", () => {
+  it("new_battle + step roundtrip over subprocess wire", async () => {
+    const w = spawnWorker();
+    await w.waitForStderr("ready");
+
+    w.send({ id: 1, cmd: "new_battle", team_a: TEAM_A, team_b: TEAM_B, seed: [1, 2, 3, 4] });
+    const nbResp = JSON.parse(await w.readLine());
+    expect(nbResp.ok).toBe(true);
+    expect(typeof nbResp.handle).toBe("number");
+    expect(nbResp.view.phase).toBe("teamPreview");
+
+    w.send({
+      id: 2, cmd: "step", handle: nbResp.handle,
+      choices: { p1: "team 1234", p2: "team 1234" },
+      seed: [10, 20, 30, 40],
+    });
+    const stepResp = JSON.parse(await w.readLine());
+    expect(stepResp.ok).toBe(true);
+    expect(typeof stepResp.child).toBe("number");
+    expect(stepResp.view.phase).toBe("move");
+    expect(Array.isArray(stepResp.outcome)).toBe(true);
+    expect(stepResp.outcome.length).toBeGreaterThan(0);
+
+    w.send({ id: 3, cmd: "close" });
+    await w.readLine();
+    w.kill();
+  });
+});
+
+describe("stdio protocol: request ordering", () => {
+  it("responses arrive in order for back-to-back requests", async () => {
+    const w = spawnWorker();
+    await w.waitForStderr("ready");
+
+    // Send two requests without waiting for responses
+    w.send({ id: 10, cmd: "stats" });
+    w.send({ id: 20, cmd: "stats" });
+
+    const resp1 = JSON.parse(await w.readLine());
+    const resp2 = JSON.parse(await w.readLine());
+
+    expect(resp1.id).toBe(10);
+    expect(resp2.id).toBe(20);
+    expect(resp1.ok).toBe(true);
+    expect(resp2.ok).toBe(true);
+
+    w.send({ id: 30, cmd: "close" });
+    await w.readLine();
+    w.kill();
   });
 });

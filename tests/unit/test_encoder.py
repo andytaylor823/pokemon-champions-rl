@@ -16,8 +16,11 @@ import pytest
 
 from action_space import A
 from encoder import (
+    ENCODER_SCHEMA_VERSION,
     ENTITY_FEATURE_DIM,
     FIELD_FEATURE_DIM,
+    NUM_MOVE_FEATURES,
+    NUM_MOVE_SLOTS,
     NUM_NATURES,
     NUM_STATUS,
     SCALAR_FEATURE_DIM,
@@ -56,6 +59,53 @@ from state_types import (
     SideSnapshot,
     StateView,
 )
+
+# ---------------------------------------------------------------------------
+# Module-level constants (ENCODER_SCHEMA_VERSION, NUM_MOVE_SLOTS)
+# ---------------------------------------------------------------------------
+
+
+class TestEncoderConstants:
+    """Verify documented conventions for constants introduced/refactored in this branch."""
+
+    def test_num_move_slots_equals_four(self):
+        """NUM_MOVE_SLOTS must be 4 — the hard game constant for moves per Pokemon."""
+        assert NUM_MOVE_SLOTS == 4
+
+    def test_num_move_features_consistent_with_slots(self):
+        """NUM_MOVE_FEATURES == 2 * NUM_MOVE_SLOTS (pp_fraction + disabled flag per slot)."""
+        assert NUM_MOVE_FEATURES == 2 * NUM_MOVE_SLOTS
+
+    def test_encoder_schema_version_is_positive_int(self):
+        """ENCODER_SCHEMA_VERSION must be a positive int (never zero, float, or negative)."""
+        assert isinstance(ENCODER_SCHEMA_VERSION, int)
+        assert ENCODER_SCHEMA_VERSION >= 1
+
+    def test_move_pp_flags_uses_num_move_slots(self):
+        """_move_pp_flags output width must equal NUM_MOVE_FEATURES (2 * NUM_MOVE_SLOTS)."""
+        from state_types import PokemonSnapshot
+
+        # A full 4-move mon — vec width should be NUM_MOVE_FEATURES
+        real_mon_data = {**_REAL_MON_DICT}
+        mon = PokemonSnapshot.model_validate(real_mon_data)
+        vec = _move_pp_flags(mon)
+        assert vec.shape == (NUM_MOVE_FEATURES,)
+
+    def test_encode_move_ids_uses_num_move_slots(self):
+        """_encode_move_ids output length must equal NUM_MOVE_SLOTS."""
+        from state_types import MoveSnapshot
+
+        moves = [MoveSnapshot(id="heatwave", pp=10, maxpp=10, disabled=False)]
+        ids = _encode_move_ids(moves)
+        assert ids.shape == (NUM_MOVE_SLOTS,)
+
+    def test_dim_constants_are_positive(self):
+        """All sentinel-derived dimension constants must be positive."""
+        assert ENTITY_FEATURE_DIM > 0
+        assert FIELD_FEATURE_DIM > 0
+        assert SIDE_FEATURE_DIM > 0
+        assert SCALAR_FEATURE_DIM > 0
+
 
 # ---------------------------------------------------------------------------
 # Load the ground-truth fixture captured from a real worker

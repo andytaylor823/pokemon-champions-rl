@@ -17,6 +17,8 @@ Not yet started.
 
 Progress signal via relative metrics: head-to-head win-rate vs prior checkpoints (Elo ladder), and later approximate/local best-response. Exact exploitability is infeasible for Pokémon.
 
+> **Dependency now satisfied.** The checkpoint loader Evaluation needs to play frozen prior nets is built: `checkpoint.load_checkpoint(path) -> LoadedCheckpoint` (rebuilds the `CVPN` from its stored config + weights) in `src/checkpoint.py`. It lives in a neutral module specifically so Evaluation can load checkpoints without importing the Trainer (`docs/plans/trainer.md` §3). Greedy play (τ→0; `self-play.md` §3) is used for measurement, not the τ=1 data-generation sampling.
+
 ## Phase-1 curriculum metric (from the SelfPlay design)
 
 > Added from the SelfPlay grilling — see `docs/plans/self-play.md` §6.2 and `docs/vibes-decisions.md` §8.8.

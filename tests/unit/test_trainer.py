@@ -28,7 +28,7 @@ from obs_bundle import make_obs_bundle
 from trainer import Trainer, TrainerConfig, _densify_policy
 from training_types import SparsePolicy, TrainingTuple, TupleMeta
 
-_SMALL = CVPNConfig(d_model=32, n_heads=2, n_layers=1, ffn_mult=2)
+_SMALL = CVPNConfig(d_model=32, n_heads=2, n_layers=1, ffn_mult=2, dropout=0.0)
 
 
 def _fake_bundle(legal: list[int], n_entities: int = 12):

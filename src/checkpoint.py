@@ -94,6 +94,9 @@ def load_checkpoint(path: str | Path, *, map_location: str = "cpu") -> LoadedChe
     """
     payload = torch.load(path, weights_only=False, map_location=map_location)
 
+    if not isinstance(payload, dict):
+        raise CheckpointFormatError(f"expected checkpoint to be a dict, got {type(payload).__name__}")
+
     saved_format = payload.get("format_version")
     if saved_format != CHECKPOINT_FORMAT_VERSION:
         raise CheckpointFormatError(f"checkpoint format_version {saved_format!r} != current {CHECKPOINT_FORMAT_VERSION}; refusing to load.")

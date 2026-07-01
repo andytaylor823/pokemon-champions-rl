@@ -90,6 +90,16 @@ def test_missing_required_key_raises(tmp_path):
         load_checkpoint(path)
 
 
+def test_non_dict_payload_raises(tmp_path):
+    """A corrupted file that deserializes to a non-dict must raise CheckpointFormatError,
+    not AttributeError — honoring the documented fail-loud contract."""
+    path = tmp_path / "corrupt_tensor.pt"
+    torch.save(torch.zeros(4), path)
+
+    with pytest.raises(CheckpointFormatError, match="expected checkpoint to be a dict"):
+        load_checkpoint(path)
+
+
 # ---------------------------------------------------------------------------
 # Gap 1: map_location forwarding
 # ---------------------------------------------------------------------------

@@ -616,6 +616,16 @@ def fitness(
     if config is None:
         config = EvalConfig()
 
+    # fitness() always uses SearchAgent for checkpoint-based agents.
+    # config.use_search=False is meaningless here and almost certainly a
+    # caller mistake — raise early rather than silently ignoring the flag.
+    if not config.use_search:
+        raise ValueError(
+            "fitness() always uses SearchAgent for checkpoint-based agents; "
+            "config.use_search=False has no effect and is not supported. "
+            "Pass config.use_search=True (the default) or omit config entirely."
+        )
+
     loaded = load_checkpoint(checkpoint_path, map_location=config.device)
     net = loaded.net
     net.eval()

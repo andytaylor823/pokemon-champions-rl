@@ -19,7 +19,6 @@ from curriculum import STAGE_0_FIRE, STAGE_0_GRASS
 from cvpn import CVPN
 from evaluation import (
     EvalConfig,
-    PolicyAgent,
     RandomAgent,
     SearchAgent,
     curriculum_report,

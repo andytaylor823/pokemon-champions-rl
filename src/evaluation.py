@@ -422,7 +422,7 @@ class EvalConfig:
     max_decisions: int = 300
     master_seed: int = 0
     use_search: bool = True
-    favored_side: str = "p1"  # curriculum: team_a (Fire) is p1
+    favored_side: Literal["p1", "p2"] = "p1"  # curriculum: team_a (Fire) is p1
     eval_search_config: SearchConfig = field(
         default_factory=lambda: SearchConfig(
             k_actions=6,
@@ -459,6 +459,9 @@ def curriculum_report(
     if config is None:
         config = EvalConfig()
 
+    if config.favored_side not in ("p1", "p2"):
+        raise ValueError(f"favored_side must be 'p1' or 'p2', got {config.favored_side!r}")
+
     if config.use_search:
         agent: Agent = SearchAgent(net, config.eval_search_config)
     else:
@@ -477,6 +480,7 @@ def curriculum_report(
         game_seed = master_rng.randint(0, 2**32 - 1)
         game_rng = random.Random(game_seed)
         team_a, team_b = matchup.sample(game_rng)
+        play_seed = game_rng.randint(0, 2**32 - 1)
 
         result = play_game(
             agent,
@@ -484,7 +488,7 @@ def curriculum_report(
             team_a,
             team_b,
             sim,
-            seed=game_seed,
+            seed=play_seed,
             max_decisions=config.max_decisions,
         )
 
@@ -548,6 +552,7 @@ def head_to_head(
         game_seed = master_rng.randint(0, 2**32 - 1)
         game_rng = random.Random(game_seed)
         team_a, team_b = matchup.sample(game_rng)
+        play_seed = game_rng.randint(0, 2**32 - 1)
 
         result = play_game(
             agent_a,
@@ -555,7 +560,7 @@ def head_to_head(
             team_a,
             team_b,
             sim,
-            seed=game_seed,
+            seed=play_seed,
             max_decisions=config.max_decisions,
         )
 
@@ -603,6 +608,10 @@ def fitness(
     Returns a dict mapping a label (opponent path string or class name) to a
     ``HeadToHeadReport``.  This satisfies the ``fitness(checkpoint) -> metric``
     shape from ``docs/architecture/repo-architecture.md`` §3.8.
+
+    Note: this entry point always uses ``SearchAgent`` for the subject
+    checkpoint and all checkpoint-based opponents, regardless of
+    ``config.use_search``.
     """
     if config is None:
         config = EvalConfig()

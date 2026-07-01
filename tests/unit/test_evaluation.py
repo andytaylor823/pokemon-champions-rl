@@ -7,7 +7,6 @@ monkeypatched or exercised via minimal stubs.
 from __future__ import annotations
 
 import random
-from dataclasses import replace
 from typing import Any
 from unittest.mock import MagicMock, patch
 

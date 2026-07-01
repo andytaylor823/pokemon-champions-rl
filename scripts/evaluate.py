@@ -41,23 +41,22 @@ import re
 import sys
 from pathlib import Path
 
-import torch
-
 # src-layout: make project modules importable when run as a plain script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import curriculum  # noqa: E402
-from evaluation import (  # noqa: E402
+import curriculum
+from evaluation import (
     EvalConfig,
     HeadToHeadReport,
+    PolicyAgent,
     RandomAgent,
     SearchAgent,
     curriculum_report,
     head_to_head,
 )
-from search import SearchConfig  # noqa: E402
-from checkpoint import load_checkpoint  # noqa: E402
-from sim_client import SimClient  # noqa: E402
+from search import SearchConfig
+from checkpoint import load_checkpoint
+from sim_client import SimClient
 
 _STAGES = {0: curriculum.STAGE_0, 1: curriculum.STAGE_1}
 
@@ -160,10 +159,7 @@ def main() -> None:
             # Optional: head-to-head vs random
             if args.vs_random:
                 rng_agent = RandomAgent(random.Random(args.seed))
-                agent_a = SearchAgent(net, search_cfg) if not args.policy_only else None
-                if agent_a is None:
-                    from evaluation import PolicyAgent  # noqa: PLC0415
-                    agent_a = PolicyAgent(net)
+                agent_a = SearchAgent(net, search_cfg) if not args.policy_only else PolicyAgent(net)
                 h2h: HeadToHeadReport = head_to_head(agent_a, rng_agent, stage, sim, config=eval_cfg)
                 row["vs_random_win_rate"] = f"{h2h.a_win_rate:.4f}"
                 row["vs_random_aborted"] = h2h.aborted
@@ -175,10 +171,7 @@ def main() -> None:
                 baseline_net = baseline_loaded.net
                 baseline_net.eval()
                 baseline_agent = SearchAgent(baseline_net, search_cfg)
-                net_agent = SearchAgent(net, search_cfg) if not args.policy_only else None
-                if net_agent is None:
-                    from evaluation import PolicyAgent  # noqa: PLC0415
-                    net_agent = PolicyAgent(net)
+                net_agent = SearchAgent(net, search_cfg) if not args.policy_only else PolicyAgent(net)
                 h2h_base: HeadToHeadReport = head_to_head(net_agent, baseline_agent, stage, sim, config=eval_cfg)
                 row["vs_baseline_win_rate"] = f"{h2h_base.a_win_rate:.4f}"
                 row["vs_baseline_aborted"] = h2h_base.aborted

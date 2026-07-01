@@ -533,6 +533,76 @@
 
 ---
 
+---
+
+## 13. Evaluation (Phase-1 — built)
+
+> Decisions from the Evaluation grilling. Full design: `docs/plans/evaluation.md`.
+> Implemented in `src/evaluation.py`, `scripts/evaluate.py`.
+
+### 13.1 Head-to-head mechanic: two independent searches, no side-swap
+
+- **Choice:** In head-to-head mode, agent_a and agent_b are *different* `SearchAgent`
+  objects; each runs its own full `search()` on the current battle state and plays only
+  its own side's result. **No side-swap is performed** — agent_a stays on p1/team_a for
+  the full run.
+- **Evidence level:** Principled (no empirical comparison). The single-net curriculum
+  curve is the Phase-1 headline metric; head-to-head is secondary. No-swap keeps
+  individual game results legible (you know which team + net combination is which).
+  Side-swap would double the stat budget for the same number of net-comparison
+  decisions but muddies "which side was I?" attribution.
+- **Alternatives:** Side-swap (play each matchup twice, swapping sides) — halves the
+  search noise at the cost of legibility. Can be added later as a flag without changing
+  the core mechanic.
+- **REVISIT trigger:** If head-to-head results show high variance from first-mover bias
+  (team_a always gets a slight advantage), add a `--side-swap` flag that averages both
+  orientations.
+- **Impact: Low** — secondary tool; the curriculum curve is the primary signal.
+
+### 13.2 Eval budget decoupled from training budget
+
+- **Choice:** Evaluation uses a *separate*, configurable `EvalConfig.eval_search_config`
+  (defaults lighter than training: `expansion_budget=8` vs `24`, `k_actions=6` vs `6`,
+  `max_chance_children=3` vs `5`). `self_play.run` continues to use its full
+  `SelfPlayConfig.search_config`. The reduced budget affects *only measurement*;
+  comparisons must use the same eval budget for both checkpoints.
+- **Evidence level:** Pragmatic — eval runs offline on checkpoints and does not need to
+  produce training-quality values; a lighter budget shortens the eval wall-clock
+  significantly. The constraint ("same budget for both checkpoints") prevents apples-to-
+  oranges comparisons.
+- **Alternatives:** Always use the full training budget for eval (more accurate, much
+  slower); or tie eval budget to the training SearchConfig (couples eval to training
+  config changes).
+- **REVISIT trigger:** If eval win-rates are too noisy at the lighter budget, increase
+  `expansion_budget` or `n_games`; do not mix budgets across checkpoints.
+- **Impact: Low** — a measurement knob; does not affect training.
+
+### 13.3 Greedy play in eval (not temperature-sampled)
+
+- **Choice:** `SearchAgent.act` uses greedy argmax over σ̄ (lowest index on ties);
+  `PolicyAgent.act` uses greedy argmax over logits.  No temperature sampling (τ→0).
+  This is the measurement mode documented in `docs/plans/self-play.md` §3 and
+  `docs/vibes-decisions.md` §8.5.
+- **Evidence level:** Principled — greedy play gives the strongest single action under
+  the current net, which is what you want to measure.  Temperature sampling introduces
+  stochasticity that muddies cross-generation comparisons.
+- **Impact: Low** — consistent with the self-play plan's stated measurement mode.
+
+### 13.4 Abort on SimError (no retry for greedy agents)
+
+- **Choice:** `play_game` aborts immediately on `SimError` from `sim.step`, rather than
+  resampling and retrying.  Retrying is explicitly excluded for `SearchAgent` and
+  `PolicyAgent` (greedy agents would pick the identical action again); `RandomAgent`
+  *could* benefit from 1-3 retries but this is marked optional and not implemented.
+- **Evidence level:** Pragmatic — mask/engine discrepancies are rare (~0 in practice per
+  `self_play.py:145-160` comments). Aborts are surfaced as a health metric; if they
+  exceed ~1%, investigate the mask/engine gap instead.
+- **REVISIT trigger:** If `aborted` count is non-trivial (> 2%), add up to 3 retries for
+  `RandomAgent` specifically.
+- **Impact: Low** — abort rate should be near zero; health metric catches it.
+
+---
+
 ## Summary by Impact
 
 | Impact | Count | Key items |
@@ -540,4 +610,4 @@
 | **High** | 4 | Transformer as backbone (1.1), top-k action abstraction (9.7), conditional belief sampler design (10.1), per-slot vs joint candidates (10.2) |
 | **Med** | 22 | d_model (1.2), n_layers (1.3), move attention pool (3.1), no derived features (5.5), flat joint action space (6.1), replay buffer strategy (8.1), loss weights (8.2), value target + z-tag (8.4), forced-decision skip (8.7), validation curriculum (8.8), GT-CFR-direct for Phase 1 (9.1), expansion budget (9.2), chance bucketing (9.3), MCCFR samples (9.4), top-K candidates (9.5), simultaneous turn-node (9.6), chance fan-out K=5 (9.8), full multi-turn growth (9.9), inner-loop budgets (9.10), learner+driver split (12.1), checkpoint format (12.2), masked policy CE (12.3) |
 | **Med (value head)** | 1 | Value-head combination function (10.3) |
-| **Low** | 26 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), action sampling temperature (8.5), tuple ObsBundle + sparse σ̄ (8.6), single-process + max_decisions cap (8.9), ReplayBuffer mechanics (8.10–8.15, incl. save/load 8.14 = Low–Med), system design (11.1–11.2), two configs + generation (12.4), AdamW weight_decay=0 (12.5), value target not z (12.6) |
+| **Low** | 30 | n_heads (1.4), ffn_mult (1.5), GELU (1.6), pre-norm (1.7), dropout (1.8), no positional encoding (1.9), all embedding dims (2.1–2.4), hybrid tokenization (5.1), derived stats (5.2), nature one-hot (5.3), normalization constants (5.4), team preview redundancy (6.2), scalar value + tanh (7.1–7.2), continuous training (8.3), action sampling temperature (8.5), tuple ObsBundle + sparse σ̄ (8.6), single-process + max_decisions cap (8.9), ReplayBuffer mechanics (8.10–8.15, incl. save/load 8.14 = Low–Med), system design (11.1–11.2), two configs + generation (12.4), AdamW weight_decay=0 (12.5), value target not z (12.6), eval h2h no-swap (13.1), eval budget decoupled (13.2), greedy eval (13.3), abort-on-SimError (13.4) |

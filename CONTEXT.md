@@ -292,3 +292,23 @@ _See_: `docs/architecture/state-encoding.md` §7.4, §9; `docs/research/article_
 A fuzzy cluster of similar sets for a species (e.g. "bulky TR attacker Torkoal"). Being retired in favor of data-driven top-K candidates from the conditional sampler. The problem with archetypes: subjective boundaries, loses within-cluster variance, doesn't give GT-CFR the concrete distinguishable candidates it needs.
 _Avoid_: Using this term in new code — prefer "candidate" or "candidate set"
 _See_: `docs/architecture/state-encoding.md` §9, §11.3
+
+### Evaluation
+
+**Favored-team win-rate**:
+With one net driving both sides of a lopsided curriculum matchup, how often the known-favored team wins. The Phase-1 legibility metric — should climb toward ~100% as the net learns the type advantage. Tracked across generations by `curriculum_report`.
+_See_: `docs/plans/evaluation.md`; `src/evaluation.py`
+
+**Win speed**:
+Engine turns to terminal (`StateView.snapshot.turn`); lower = stronger play. Tracked alongside win-rate across generations — a trained net should close out wins faster than random play. Reported as mean and median over favored-side wins.
+_See_: `docs/plans/evaluation.md`; `CurriculumReport.mean_favored_turns`
+
+**Head-to-head**:
+Two *different* checkpoints played against each other, each running its own independent search and playing only its own side (no side-swap). Secondary self-improvement metric: net_N should progressively beat earlier checkpoints net_M. Agent A stays on p1/team_a for the full run.
+_Avoid_: Confusing with the curriculum metric — curriculum uses one net on both sides; head-to-head uses two distinct nets.
+_See_: `docs/plans/evaluation.md` §13.1; `evaluation.head_to_head`
+
+**Evaluation agent**:
+A per-side move chooser used only in Evaluation (never in SelfPlay or Search). Three implementations: `SearchAgent` (greedy over σ̄, with a 1-slot handle cache for the one-search-per-turn optimization), `PolicyAgent` (greedy over the raw policy-head logits, no tree), `RandomAgent` (uniform over legal mask, the floor baseline). All three implement the `Agent` protocol.
+_Avoid_: Confusing with the CVPN network itself — the agent wraps the net and adds a play-selection strategy.
+_See_: `src/evaluation.py`; `docs/plans/evaluation.md` §Architecture

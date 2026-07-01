@@ -31,7 +31,8 @@ from cvpn import CVPN  # noqa: E402
 from search import SearchConfig  # noqa: E402
 from self_play import SelfPlayConfig  # noqa: E402
 from sim_client import SimClient  # noqa: E402
-from train_loop import TrainLoopConfig, TrainerConfig, run_training  # noqa: E402
+from trainer import TrainerConfig  # noqa: E402
+from train_loop import TrainLoopConfig, run_training  # noqa: E402
 
 _STAGES = {0: curriculum.STAGE_0, 1: curriculum.STAGE_1}
 

@@ -18,6 +18,7 @@ import logging
 import random
 from dataclasses import replace
 from pathlib import Path
+from statistics import fmean
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -95,20 +96,74 @@ def run_training(
     sim: SimClient,
     config: TrainLoopConfig,
 ) -> list[GenerationLog]:
-    """Drive a curriculum stage end to end; return the per-generation logs.
+    """Drive a curriculum stage from scratch; return the per-generation logs.
 
-    A fresh ReplayBuffer is built here (no cross-stage bleed — ``replay-buffer.md`` §12).
-    The caller owns the ``net`` (fresh for from-scratch, or a loaded checkpoint for
-    warm-start) and the ``sim`` (its Node worker lifecycle).
+    Builds a fresh Trainer + an empty ReplayBuffer (no cross-stage bleed —
+    ``replay-buffer.md`` §12) and drives from generation 1. The caller owns the ``net``
+    (fresh for from-scratch, or a loaded checkpoint for warm-start) and the ``sim`` (its
+    Node worker lifecycle). To continue an interrupted stage instead, see
+    :func:`resume_training`.
     """
     trainer = Trainer(net, config.trainer)
     buffer = ReplayBuffer(config.buffer_capacity, seed=config.master_seed)
+    loop_rng = random.Random(config.master_seed)
+    return _drive(trainer, buffer, matchup_source, sim, config, loop_rng, start_gen=1)
+
+
+def resume_training(
+    matchup_source: MatchupSource,
+    sim: SimClient,
+    config: TrainLoopConfig,
+    *,
+    checkpoint_path: str | Path,
+    buffer_path: str | Path,
+) -> list[GenerationLog]:
+    """Continue a stage from a checkpoint + its paired buffer snapshot.
+
+    Reconstructs the Trainer (weights + AdamW state + the *saved* ``TrainerConfig``, with
+    ``device`` overridden to ``config.trainer.device``), reloads the buffer, and restores
+    the loop RNG so the per-generation seeds continue the original sequence unbroken.
+    Drives from the checkpoint's generation + 1 through ``config.n_generations``.
+
+    On resume the learner knobs and ``buffer_capacity`` come from the checkpoint / snapshot,
+    not ``config`` — only the loop knobs (generation count, cadence, self-play) and
+    ``trainer.device`` are honored. The two files are the pair the driver writes together:
+    ``gen_NNNN.pt`` and ``buffer_gen_NNNN.pt`` at the same generation.
+    """
+    trainer, generation, rng_state = Trainer.resume(checkpoint_path, device=config.trainer.device)
+    buffer = ReplayBuffer.load(buffer_path)
+    loop_rng = random.Random(config.master_seed)
+    if rng_state and "loop_rng" in rng_state:
+        loop_rng.setstate(rng_state["loop_rng"])
+    else:
+        logger.warning("Checkpoint carries no loop RNG state; generation seeds will not reproduce the original sequence.")
+    return _drive(trainer, buffer, matchup_source, sim, config, loop_rng, start_gen=generation + 1)
+
+
+def _drive(
+    trainer: Trainer,
+    buffer: ReplayBuffer,
+    matchup_source: MatchupSource,
+    sim: SimClient,
+    config: TrainLoopConfig,
+    loop_rng: random.Random,
+    *,
+    start_gen: int,
+) -> list[GenerationLog]:
+    """The generation loop, shared by the fresh-start and resume entrypoints.
+
+    Drives generations ``start_gen .. n_generations`` over an already-constructed Trainer,
+    buffer, and loop RNG — so the two entrypoints differ only in how that initial state is
+    built (fresh vs. reconstructed from a checkpoint).
+    """
     ckpt_dir = Path(config.checkpoint_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    loop_rng = random.Random(config.master_seed)
+    # The trainer we're driving owns the authoritative sampling batch size — on a fresh run
+    # it's config.trainer.batch_size; on resume it's the size restored from the checkpoint.
+    batch_size = trainer.config.batch_size
     logs: list[GenerationLog] = []
 
-    for gen in range(1, config.n_generations + 1):
+    for gen in range(start_gen, config.n_generations + 1):
         # --- Generate G games (fresh per-generation seed so generations differ) ---
         gen_seed = loop_rng.randint(0, 2**32 - 1)
         sp_config = replace(
@@ -117,7 +172,7 @@ def run_training(
             generation=gen,
             master_seed=gen_seed,
         )
-        new_tuples = list(self_play.run(net, matchup_source, sim, sp_config))
+        new_tuples = list(self_play.run(trainer.net, matchup_source, sim, sp_config))
         buffer.add(new_tuples)
 
         log = GenerationLog(
@@ -127,20 +182,13 @@ def run_training(
             z_value_corr=_z_value_corr(new_tuples),
         )
 
-        # --- Train if the buffer is warmed up and holds a full batch ---
-        batch_size = config.trainer.batch_size
-        if len(buffer) >= config.warmup_threshold and len(buffer) >= batch_size:
-            v_sum = p_sum = t_sum = 0.0
-            for _ in range(config.train_steps_per_generation):
-                step = trainer.train_step(buffer.sample(batch_size))
-                v_sum += step.value_loss
-                p_sum += step.policy_loss
-                t_sum += step.total_loss
-            steps = config.train_steps_per_generation
+        # --- Train once warmed up and holding at least a full batch ---
+        if len(buffer) >= max(config.warmup_threshold, batch_size):
+            step_logs = [trainer.train_step(buffer.sample(batch_size)) for _ in range(config.train_steps_per_generation)]
             log.trained = True
-            log.value_loss = v_sum / steps
-            log.policy_loss = p_sum / steps
-            log.total_loss = t_sum / steps
+            log.value_loss = fmean(s.value_loss for s in step_logs)
+            log.policy_loss = fmean(s.policy_loss for s in step_logs)
+            log.total_loss = fmean(s.total_loss for s in step_logs)
 
         # --- Publish checkpoint + paired buffer snapshot (same generation) ---
         if gen % config.checkpoint_interval == 0:

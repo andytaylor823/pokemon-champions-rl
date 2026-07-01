@@ -88,3 +88,52 @@ def test_missing_required_key_raises(tmp_path):
 
     with pytest.raises(CheckpointFormatError, match="missing key"):
         load_checkpoint(path)
+
+
+# ---------------------------------------------------------------------------
+# Gap 1: map_location forwarding
+# ---------------------------------------------------------------------------
+
+
+def test_loaded_net_parameters_on_requested_device(tmp_path):
+    """load_checkpoint places all net parameters on the requested map_location device."""
+    net = CVPN(_SMALL)
+    path = tmp_path / "ckpt.pt"
+    save_checkpoint(path, net=net, generation=0)
+
+    loaded = load_checkpoint(path, map_location="cpu")
+    for p in loaded.net.parameters():
+        assert p.device == torch.device("cpu")
+
+
+# ---------------------------------------------------------------------------
+# Gap 2: Extra keys in payload (forward compatibility)
+# ---------------------------------------------------------------------------
+
+
+def test_extra_payload_keys_ignored_on_load(tmp_path):
+    """A checkpoint with additive future keys still loads without error."""
+    net = CVPN(_SMALL)
+    path = tmp_path / "ckpt.pt"
+    save_checkpoint(path, net=net, generation=5)
+
+    # Tamper to add an unknown key.
+    payload = torch.load(path, weights_only=False)
+    payload["future_field"] = 42
+    payload["another_future_list"] = [1, 2, 3]
+    torch.save(payload, path)
+
+    loaded = load_checkpoint(path)
+    assert loaded.generation == 5
+    assert _state_dicts_equal(net.state_dict(), loaded.net.state_dict())
+
+
+# ---------------------------------------------------------------------------
+# Gap 3: Nonexistent file raises clear error
+# ---------------------------------------------------------------------------
+
+
+def test_load_nonexistent_file_raises(tmp_path):
+    """Loading a path that does not exist raises FileNotFoundError (not a cryptic torch error)."""
+    with pytest.raises(FileNotFoundError):
+        load_checkpoint(tmp_path / "does_not_exist.pt")

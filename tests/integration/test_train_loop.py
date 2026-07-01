@@ -51,6 +51,10 @@ def test_two_generation_stage0_run(sim_client: SimClient, tmp_path):
     assert len(logs) == 2
     assert all(log.n_tuples_generated > 0 for log in logs)
 
+    # --- Gap 27: each generation should produce a realistic number of tuples ---
+    for log in logs:
+        assert log.n_tuples_generated >= 2, f"Gen {log.generation} produced only {log.n_tuples_generated} tuples"
+
     # --- At least one generation trained, and every loss it logged is finite ---
     trained = [log for log in logs if log.trained]
     assert trained, "buffer never warmed up enough to train"
@@ -58,6 +62,12 @@ def test_two_generation_stage0_run(sim_client: SimClient, tmp_path):
         assert math.isfinite(log.value_loss)
         assert math.isfinite(log.policy_loss)
         assert math.isfinite(log.total_loss)
+
+    # --- Gap 26: z_value_corr diagnostic should be populated (>= 2 tuples per gen) ---
+    corrs = [log.z_value_corr for log in logs if log.z_value_corr is not None]
+    assert corrs, "z_value_corr was None for every generation despite >= 2 tuples each"
+    for c in corrs:
+        assert math.isfinite(c)
 
     # --- Checkpoints + paired buffer snapshots landed on disk, one per generation ---
     for gen in (1, 2):
@@ -122,3 +132,8 @@ def test_resume_continues_from_checkpoint(sim_client: SimClient, tmp_path):
     trainer, generation, _ = Trainer.resume(tmp_path / "gen_0004.pt")
     assert generation == 4
     assert trainer.config.batch_size == 2
+
+    # --- Gap 28: grad norm from the resumed trainer's next step is finite ---
+    buf = ReplayBuffer.load(tmp_path / "buffer_gen_0004.pt")
+    step_log = trainer.train_step(buf.sample(2))
+    assert step_log.grad_norm is not None and math.isfinite(step_log.grad_norm)

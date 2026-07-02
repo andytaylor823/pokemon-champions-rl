@@ -1,0 +1,55 @@
+---
+alwaysApply: false
+paths: sim/src/types.ts
+---
+
+# State Types — Python wire contract
+
+`state_types.py` contains Pydantic `BaseModel` classes that mirror `sim/src/types.ts` **1:1**. They are the single Python source of truth for the snapshot/view boundary.
+
+## Role
+
+SimClient validates **every** worker JSON response against these models. A missing or renamed key raises `ValidationError` immediately — never silently producing zeros in the encoder.
+
+## Model hierarchy
+
+```
+StateView
+├── phase: str
+├── to_move: list[str]
+├── legal: dict[str, Any]          ← raw Showdown request (untyped)
+├── terminal: bool
+├── utility: dict[str, float] | None
+└── snapshot: BattleSnapshot
+    ├── turn: int
+    ├── field: FieldSnapshot
+    │   ├── weather / weatherDuration
+    │   ├── terrain / terrainDuration
+    │   └── pseudoWeather: dict[str, PseudoWeatherEntry]
+    └── sides: list[SideSnapshot]
+        ├── id: str ("p1" / "p2")
+        ├── sideConditions: dict[str, SideConditionSnapshot]
+        └── pokemon: list[PokemonSnapshot]
+            ├── species, nature, level, gender, hp, maxhp, fainted
+            ├── status, statusState: StatusStateSnapshot
+            ├── ability, item, lastItem, active, position, activeTurns
+            ├── stats: dict[str, int], boosts: dict[str, int]
+            ├── moves: list[MoveSnapshot]
+            ├── volatiles: list[str]
+            └── volatileDetails: dict[str, VolatileDetail]
+```
+
+## Conventions
+
+- **camelCase field names** — matches the JSON wire format from `types.ts`. Linter suppressed via `# ruff: noqa: N815` at file top.
+- **`StateView.legal`** is intentionally untyped (`dict[str, Any]`). It carries the raw Showdown `activeRequest` object consumed directly by `action_space.legal_mask`, not the encoder.
+- **`Side` type alias** = `Literal["p1", "p2"]` — used throughout search and strategy modules.
+
+## Sync discipline
+
+When a field is added, removed, or renamed in `sim/src/types.ts`:
+1. Update the corresponding Pydantic model in `state_types.py` in lockstep.
+2. Run `pytest tests/unit/test_state_types.py` to verify round-trip parsing.
+3. Check encoder sub-encoders if the changed field is consumed by `encoder.py`.
+
+See `simclient/worker-protocol.mdc` (JSON-RPC shapes), `encoding/overview.mdc` (pipeline context).

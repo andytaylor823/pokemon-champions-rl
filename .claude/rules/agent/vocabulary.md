@@ -1,0 +1,7 @@
+# Project Vocabulary
+
+The canonical glossary for this project lives in **`CONTEXT.md`** (repo root). Read it before responding to any task.
+
+It defines precise terms and **"Avoid" labels** for game structure (info set, history, public/private state, belief range, candidate, world, strategy fusion), algorithm concepts (two loops, inner/outer loop, regret, CFV, average strategy, Nash equilibrium, step thinking), architecture components (CVPN, policy head, value head, token, CLS token, three-tier split), search mechanics (GT-CFR, PUCT, expansion, CFR+ update, chance bucketing, MCCFR), training pipeline (replay buffer, training tuple, bootstrapping, exploitability), build phases (Phase 1 pit-stop, Phase 4 north star), and Pokemon domain terms (joint action, simultaneous moves, forced switch, meta priors, candidate vs archetype).
+
+**Always use the canonical term; never use its "Avoid" synonyms.** When a term has an "Avoid" label in `CONTEXT.md`, prefer the canonical form — e.g. say "CVPN" not "the model," say "world" not "deal," say "belief range" not "belief state."

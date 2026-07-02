@@ -1,0 +1,26 @@
+---
+alwaysApply: false
+paths: sim/src/**/*.ts
+---
+
+# SimClient — battle-engine seam (read first)
+
+SimClient is the **only** boundary between the Python agent (search, encoder, net,
+self-play) and the Pokemon Showdown battle engine. It provides legal actions, turn
+resolution, terminal/payoff, and **cloning/forking** for tree search.
+
+## Pieces
+- `sim/src/sim-worker.ts` — long-lived Node process; owns `Battle` objects; speaks line-delimited JSON over stdio.
+- `src/sim_client.py` — Python class that spawns/owns one worker subprocess (one per self-play worker).
+- Builds on `sim/src/battle-runner.ts` (`packTeam`, `validateStatPoints`). The async `BattleStream` runner there is for **replays only**, not search.
+
+## Authoritative design (read before changing the contract)
+- `docs/architecture/repo-architecture.md` §3.1 — the interface + measured fork cost (~1.6 ms, ~72 KiB/clone).
+- `docs/plans/sim-client.md` — the settled decisions and remaining build order.
+
+## v1 scope
+Self-play only: `new_battle(teamA, teamB)` → `open_search(live)` → `step` to terminal.
+**Deferred:** real-game mid-game reconstruction, redaction / per-perspective views, and
+the chance-child caching strategy (those live in the belief/encoder/search layers, not here).
+
+See `contract.mdc` (invariants), `showdown-engine-api.mdc` (engine facts), `worker-protocol.mdc` (the JSON-RPC).

@@ -119,6 +119,8 @@ class PolicyAgent:
 
     def act(self, view: StateView, side: str, sim: SimClient, handle: int) -> int:
         obs = encode(view, side)
+        device = next(self._net.parameters()).device
+        obs = obs.to(device)
         with torch.no_grad():
             logits, _ = self._net(obs)  # [A], -inf at illegal positions
         if torch.all(logits == float("-inf")):
@@ -316,7 +318,7 @@ class CurriculumReport:
 
     @property
     def favored_win_rate(self) -> float:
-        """Fraction of decided games won by the favored side (draws excluded too)."""
+        """Fraction of decided games (wins + losses + draws) won by the favored side."""
         decided = self.favored_wins + self.underdog_wins + self.draws
         if decided == 0:
             return 0.0
@@ -372,7 +374,7 @@ class HeadToHeadReport:
 
     @property
     def a_win_rate(self) -> float:
-        """Fraction of decided games won by agent_a (draws excluded)."""
+        """Fraction of decided games (wins + losses + draws) won by agent_a."""
         decided = self.a_wins + self.b_wins + self.draws
         if decided == 0:
             return 0.0

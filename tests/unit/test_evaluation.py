@@ -330,9 +330,9 @@ class TestCurriculumReportMath:
             all_turns=all_turns,
         )
 
-    def test_favored_win_rate_excludes_draws_and_aborted(self):
+    def test_favored_win_rate_includes_draws_excludes_aborted(self):
         r = self._report(favored_wins=3, underdog_wins=1, draws=2, aborted=4)
-        # Decided = 3 + 1 + 2 = 6; aborted not counted
+        # Decided = 3 + 1 + 2 = 6; draws count in denominator, aborted do not
         assert r.favored_win_rate == pytest.approx(3 / 6)
 
     def test_favored_win_rate_all_draws(self):
@@ -390,9 +390,9 @@ class TestHeadToHeadReportMath:
             all_turns=tuple(range(a_wins + b_wins + draws)),
         )
 
-    def test_a_win_rate_excludes_draws_and_aborted(self):
+    def test_a_win_rate_includes_draws_excludes_aborted(self):
         r = self._report(a_wins=4, b_wins=2, draws=2, aborted=2)
-        # Decided = 4 + 2 + 2 = 8
+        # Decided = 4 + 2 + 2 = 8; draws count in denominator, aborted do not
         assert r.a_win_rate == pytest.approx(4 / 8)
 
     def test_a_win_rate_zero_decided(self):

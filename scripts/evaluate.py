@@ -170,7 +170,7 @@ def main() -> None:
                 baseline_loaded = load_checkpoint(baseline_path, map_location=args.device)
                 baseline_net = baseline_loaded.net
                 baseline_net.eval()
-                baseline_agent = SearchAgent(baseline_net, search_cfg)
+                baseline_agent = SearchAgent(baseline_net, search_cfg) if not args.policy_only else PolicyAgent(baseline_net)
                 net_agent = SearchAgent(net, search_cfg) if not args.policy_only else PolicyAgent(net)
                 h2h_base: HeadToHeadReport = head_to_head(net_agent, baseline_agent, stage, sim, config=eval_cfg)
                 row["vs_baseline_win_rate"] = f"{h2h_base.a_win_rate:.4f}"

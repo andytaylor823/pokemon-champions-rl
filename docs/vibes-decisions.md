@@ -533,8 +533,6 @@
 
 ---
 
----
-
 ## 13. Evaluation (Phase-1 — built)
 
 > Decisions from the Evaluation grilling. Full design: `docs/plans/evaluation.md`.

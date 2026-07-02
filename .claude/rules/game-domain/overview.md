@@ -39,4 +39,4 @@ Pokemon Champions replaces the traditional EV/IV system:
 - **Fake Out** — priority move that flinches, only works on first turn after switch-in. Defines many opening sequences.
 - **Redirecting** — moves like Follow Me / Rage Powder force opponents to target the redirector. Key doubles mechanic.
 
-See `stat-points.mdc` (stat system details), `legality.mdc` (team validation CLI).
+See `game-domain/stat-points.md` (stat system details), `game-domain/legality.md` (team validation CLI).

@@ -52,4 +52,4 @@ When a field is added, removed, or renamed in `sim/src/types.ts`:
 2. Run `pytest tests/unit/test_state_types.py` to verify round-trip parsing.
 3. Check encoder sub-encoders if the changed field is consumed by `encoder.py`.
 
-See `simclient/worker-protocol.mdc` (JSON-RPC shapes), `encoding/overview.mdc` (pipeline context).
+See `simclient/worker-protocol--1.md` (JSON-RPC shapes), `encoding/overview--1.md` (pipeline context).

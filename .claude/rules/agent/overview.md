@@ -57,12 +57,12 @@ During a battle, the agent cannot see:
 
 ## Simulation Engine
 
-- `pokemon-showdown` (full Smogon repo, TypeScript) is the battle engine — supports state save/restore via `State.serializeBattle()` / `State.deserializeBattle()` (see `showdown-engine-api.mdc`)
+- `pokemon-showdown` (full Smogon repo, TypeScript) is the battle engine — supports state save/restore via `State.serializeBattle()` / `State.deserializeBattle()` (see `showdown-engine-api.md`)
 - The `SimClient` seam (`src/sim_client.py` ↔ `sim/src/sim-worker.ts`) is the only boundary between Python and the engine
 - Search/training Python code will call into the engine via SimClient's clone/step/view protocol
 - **Do NOT reimplement battle rules** — always use Showdown's engine as source of truth
 
-See `theory-reference.mdc` (algorithmic theory pointer), `paper-index.mdc` (Player of Games paper reference).
+See `agent/theory-reference.md` (algorithmic theory pointer), `agent/paper-index.md` (Player of Games paper reference).
 
 ## Python Coding Conventions
 

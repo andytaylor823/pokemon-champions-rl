@@ -61,4 +61,4 @@ search(view, sim, net, from_handle, config=None) → SearchResult
 - Scalar CVPN value head only.
 - No opponent belief-range sampling.
 
-See `tree-invariants.mdc` (node guarantees), `cfr-algorithm.mdc` (update mechanics), `docs/architecture/gt-cfr-theory.md` section 10.2.
+See `search/tree-invariants.md` (node guarantees), `search/cfr-algorithm--1.md` (update mechanics), `docs/architecture/gt-cfr-theory.md` section 10.2.

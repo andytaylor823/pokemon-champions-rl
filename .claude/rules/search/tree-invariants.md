@@ -42,4 +42,4 @@ The `k x k` grid on `TurnNode` is indexed by **position within the top-k array**
 - `TurnNode.grid` entries and `ChanceNode.children` are **append-only** during the expansion budget. Never remove or reorder existing children.
 - `ChanceOutcome.leaf_value_p1` is written once at creation and read thereafter.
 
-See `overview.mdc` (package entry point), `cfr-algorithm.mdc` (update mechanics).
+See `search/overview.md` (package entry point), `search/cfr-algorithm--1.md` (update mechanics).

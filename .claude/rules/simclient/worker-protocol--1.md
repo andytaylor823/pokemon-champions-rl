@@ -18,7 +18,7 @@ Request: `{ id, cmd, ...args }`. Response: `{ id, ok: true, ...result }` or `{ i
 - `step{handle, choices:{p1?,p2?}, seed}` → `{child, view, outcome}`  (`outcome` = protocol log lines added this step, for the search to bucket)
 - `view{handle}` → `{view}` · `release{handle}` · `close_search{session}` → `{freed}` · `stats` → `{handles, sessions}`
 
-`view` is a **StateView**: `{ phase, to_move, legal, snapshot, terminal, utility }` (engine-native; see `showdown-engine-api.mdc`).
+`view` is a **StateView**: `{ phase, to_move, legal, snapshot, terminal, utility }` (engine-native; see `simclient/showdown-engine-api--1.md`).
 
 ## Adding a command (keep both sides in sync)
 1. Add a `case "name":` in `dispatch()` (`sim-worker.ts`) returning a plain JSON-safe object.

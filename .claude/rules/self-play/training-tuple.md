@@ -50,4 +50,4 @@ Tuples are held as mutable `_PendingTuple` (same fields minus `z`) during the ga
 - `value` becomes a **vector** of per-candidate CFVs (scalar is the length-1 degenerate case).
 - Value-only tuples (absent `policy`) re-enter for KataGo-style Playout Cap Randomization.
 
-See `overview.mdc` (game loop), `docs/plans/self-play.md` §4, `docs/architecture/gt-cfr-theory.md` §11–12.
+See `self-play/overview.md` (game loop), `docs/plans/self-play.md` §4, `docs/architecture/gt-cfr-theory.md` §11–12.

@@ -12,7 +12,7 @@ paths: src/meta_priors/**/*.py
 | Module | Role |
 |---|---|
 | `data_loader.py` | Parse raw Limitless API JSON into `PokemonSet` / `Team` dataclasses; build a species → sets index. Mega forms collapse to base species. All frequencies are weighted by `games_played`. |
-| `legality.py` | Legal lists, legality validation, Limitless API access, and tournament caching. Also the data pipeline rule's concern — see `data-pipeline.mdc`. |
+| `legality.py` | Legal lists, legality validation, Limitless API access, and tournament caching. Also the data pipeline rule's concern — see `meta-priors/data-pipeline--1.md`. |
 | `clustering.py` | Distance computation, clustering algorithms, silhouette-based auto-k, and the hard-partition pipeline. |
 | `app.py` | Streamlit dashboard — species selection, weight tuning, archetype cards, and the interactive conditional-prior panel. |
 | `check_legality.py` | Thin CLI wrapper around `legality.main()`. |
@@ -53,4 +53,4 @@ The dashboard is the primary interface for inspecting and validating the cluster
 
 `scrape_learnsets.py` and `download_sprites.py` are run once (or occasionally refreshed) and write to `data/legal/` and `data/sprites/` respectively. They are not part of the app's runtime path — the app reads from those directories at import time.
 
-See `data-pipeline.mdc` (tournament data download, caching, and manual corrections).
+See `meta-priors/data-pipeline--1.md` (tournament data download, caching, and manual corrections).

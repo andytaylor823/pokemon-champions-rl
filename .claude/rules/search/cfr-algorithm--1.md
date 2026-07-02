@@ -56,4 +56,4 @@ Visits are incremented on the selected actions at each level (so PUCT scores dec
 
 Returns `True` if a node was expanded, `False` if the tree is fully saturated.
 
-See `overview.mdc` (loop structure), `tree-invariants.mdc` (node guarantees), `docs/architecture/gt-cfr-theory.md`.
+See `search/overview.md` (loop structure), `search/tree-invariants.md` (node guarantees), `docs/architecture/gt-cfr-theory.md`.

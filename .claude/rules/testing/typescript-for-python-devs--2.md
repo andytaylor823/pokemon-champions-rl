@@ -91,7 +91,7 @@ const { State } = require("pokemon-showdown/dist/sim/state");
 
 1. **Async tests need `await`.** If a test calls an async function without `await`, it silently passes even if the assertion would fail.
 2. **Showdown dex loading is slow on first import** (~50ms). Use `beforeAll` for one-time setup if importing the engine.
-3. **Module-level side effects.** TS modules can have code that runs at import time. Use the `require.main === module` guard (see `conventions.mdc`) to prevent `main()` from running when imported for testing.
+3. **Module-level side effects.** TS modules can have code that runs at import time. Use the `require.main === module` guard (see `testing/conventions--1.md`) to prevent `main()` from running when imported for testing.
 4. **Mutable global state.** `sim-worker.ts` uses global maps for handles/sessions. Always call `resetState()` in `beforeEach` to isolate tests.
 5. **`toBe` vs `toEqual`.** `toBe` is `===` (reference equality) — use for primitives. `toEqual` does deep comparison — use for objects and arrays.
 6. **Packed format strips spaces.** Showdown's `Teams.pack()` removes spaces from identifiers: `"Charizardite Y"` becomes `"CharizarditeY"`, `"Heat Wave"` becomes `"HeatWave"`.

@@ -19,6 +19,6 @@ It covers, with worked examples (Kuhn poker) and collected equations:
 **Companion docs (do not duplicate; reference them):**
 - `docs/architecture/search-nn-interface.md` — runtime interface: NN call patterns, caching, MCCFR deal sampling, composite private states, three-tier split, chance bucketing.
 - `research/notes.md` — engineering counterpart: algorithm survey, sim engine (`@pkmn/sim`), data sources, milestones.
-- `.cursor/rules/agent/overview.mdc`, `.cursor/rules/game-domain/overview.mdc`, `.cursor/rules/game-domain/legality.mdc`.
+- `.cursor/rules/agent/overview.md`, `.cursor/rules/game-domain/overview.md`, `.cursor/rules/game-domain/legality.md`.
 
 When the theory in `docs/architecture/gt-cfr-theory.md` is extended or corrected, keep that doc as the single source of truth rather than re-deriving theory inline in code or chat.

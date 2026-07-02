@@ -2,7 +2,7 @@
 
 When running the `/update-docs` skill (doc/rule staleness audit), **only** audit these two sets of files:
 
-1. **Cursor rules** — `.cursor/rules/**/*.mdc`
+1. **Cursor rules** — `.cursor/rules/**/*.md`
 2. **Plans docs** — `docs/plans/**/*.md`
 
 Skip everything else (`docs/architecture/`, `docs/research/`, `docs/transcripts/`, `README.md`, `research/notes.md`, etc.). Those docs are reference material or conversation records; they are maintained separately and do not need periodic sync-marker audits.

@@ -76,4 +76,4 @@ Uses pickle-based deserialization (`torch.load(path, weights_only=False)`) becau
 - `CHECKPOINT_FORMAT_VERSION = 1` — no migration story yet (Phase-1 checkpoints are disposable, per-stage).
 - Scalar value head only — the stored `model_config` will naturally grow a vector-CFV field in Phase 4.
 
-See `overview.mdc` (the driver that pairs checkpoint + buffer), `replay-buffer.mdc` (the paired buffer snapshot), `cvpn/overview.mdc` (what the loaded net is), `docs/plans/trainer.md` §3.
+See `training/overview--1.md` (the driver that pairs checkpoint + buffer), `training/replay-buffer.md` (the paired buffer snapshot), `cvpn/overview.md` (what the loaded net is), `docs/plans/trainer.md` §3.

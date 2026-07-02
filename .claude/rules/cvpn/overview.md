@@ -45,4 +45,4 @@ All dimension fields derive from `encoder` and `action_space` module constants â
 - Scalar value head only (no vector CFV head for per-action counterfactual values).
 - Phase 4 adds a vector CFV head (`[k]` values) without changing the forward signature for callers that only need policy + scalar value.
 
-See `encoding/tensor-contract.mdc` (input schema), `encoding/overview.mdc` (pipeline), `action-space/overview.mdc` (A constant).
+See `encoding/tensor-contract--1.md` (input schema), `encoding/overview--1.md` (pipeline), `action-space/overview.md` (A constant).

@@ -43,4 +43,4 @@ After `collate_obs_bundles(list[ObsBundle])`, all tensors gain a leading `B` dim
 - **`padding_mask` polarity**: True = attend, False = ignore. The CVPN inverts this for PyTorch's Transformer (which uses True = ignore).
 - **`action_mask` polarity**: True = legal. CVPN masks illegal positions to `-inf`.
 
-See `overview.mdc` (pipeline context), `cvpn/overview.mdc` (consumer), `docs/architecture/state-encoding.md`.
+See `encoding/overview--1.md` (pipeline context), `cvpn/overview.md` (consumer), `docs/architecture/state-encoding.md`.

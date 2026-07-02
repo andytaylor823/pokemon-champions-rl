@@ -55,4 +55,4 @@ encode(view: StateView, perspective: str, belief: dict | None = None) → ObsBun
 
 `ENTITY_FEATURE_DIM`, `FIELD_FEATURE_DIM`, `SIDE_FEATURE_DIM`, `SCALAR_FEATURE_DIM` — computed at module load from sentinel encoding calls. `CVPNConfig` reads these directly.
 
-See `tensor-contract.mdc` (ObsBundle schema), `state-types.mdc` (wire model reference), `docs/architecture/state-encoding.md`.
+See `encoding/tensor-contract--1.md` (ObsBundle schema), `encoding/state-types--1.md` (wire model reference), `docs/architecture/state-encoding.md`.

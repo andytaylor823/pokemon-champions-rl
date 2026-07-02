@@ -32,7 +32,7 @@ Every acting side has exactly one legal action (e.g. forced switch to your only 
 ### Genuine decisions
 
 1. `result = search(view, sim, net, from_handle=handle, config=search_config)`
-2. Buffer one `_PendingTuple` per side with >=2 legal actions (see `training-tuple.mdc`)
+2. Buffer one `_PendingTuple` per side with >=2 legal actions (see `self-play/training-tuple.md`)
 3. Sample one action per side from `result.strategy[side]` via `_sample_action` (temperature-scaled)
 4. Translate to choice strings via `action_to_choice_contextual`
 5. Advance with `_advance` (step + release old handle)
@@ -76,4 +76,4 @@ Returns `(team_a, team_b)` as `list[dict]` for `new_battle`. `CurriculumMatchupS
 | `search_config` | `SearchConfig \| None` | None | Passed to `search()` |
 | `generation` | `int` | 0 | Checkpoint generation tag for `TupleMeta` |
 
-See `training-tuple.mdc` (data contract), `curriculum.mdc` (validation matchups), `search/overview.mdc` (inner loop), `action-space/overview.mdc` (`forced_actions`, `action_to_choice_contextual`), `docs/plans/self-play.md`.
+See `self-play/training-tuple.md` (data contract), `self-play/curriculum.md` (validation matchups), `search/overview.md` (inner loop), `action-space/overview.md` (`forced_actions`, `action_to_choice_contextual`), `docs/plans/self-play.md`.

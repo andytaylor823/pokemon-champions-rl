@@ -94,4 +94,4 @@ The buffer never imports the action-space size `A` or touches `ObsBundle` intern
 - Scalar value target only (no vector CFV head).
 - No Evaluation module yet — `scripts/train.py` prints losses as the manual feasibility signal.
 
-See `replay-buffer.mdc` (what the buffer stores), `checkpoint.mdc` (the save/load seam), `self-play/overview.mdc` (data generator), `self-play/training-tuple.mdc` (tuple schema), `docs/plans/trainer.md`.
+See `training/replay-buffer.md` (what the buffer stores), `training/checkpoint.md` (the save/load seam), `self-play/overview.md` (data generator), `self-play/training-tuple.md` (tuple schema), `docs/plans/trainer.md`.

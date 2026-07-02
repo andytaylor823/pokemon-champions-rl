@@ -79,4 +79,4 @@ No `clear()` method — the orchestrator constructs a new `ReplayBuffer` for eac
 
 Single-threaded, no locking. Phase 1 plays and trains in turns — locking would guard a situation that cannot occur. The future concurrent shape (N producers → one buffer) will likely be multi-process, where an in-process lock is the wrong primitive.
 
-See `self-play/training-tuple.mdc` (what the buffer stores), `overview.mdc` (who calls `sample`, warmup gate), `checkpoint.mdc` (paired snapshot pairing), `docs/plans/replay-buffer.md`.
+See `self-play/training-tuple.md` (what the buffer stores), `training/overview--1.md` (who calls `sample`, warmup gate), `training/checkpoint.md` (paired snapshot pairing), `docs/plans/replay-buffer.md`.

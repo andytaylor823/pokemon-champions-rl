@@ -23,4 +23,4 @@ Self-play only: `new_battle(teamA, teamB)` → `open_search(live)` → `step` to
 **Deferred:** real-game mid-game reconstruction, redaction / per-perspective views, and
 the chance-child caching strategy (those live in the belief/encoder/search layers, not here).
 
-See `contract.mdc` (invariants), `showdown-engine-api.mdc` (engine facts), `worker-protocol.mdc` (the JSON-RPC).
+See `simclient/contract--1.md` (invariants), `simclient/showdown-engine-api--1.md` (engine facts), `simclient/worker-protocol--1.md` (the JSON-RPC).

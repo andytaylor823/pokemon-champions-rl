@@ -47,4 +47,4 @@ Teams share a `_*_BASE` definition (species/item/ability/nature/statPoints) acro
 3. Create a `CurriculumMatchupSource` instance.
 4. Validate legality: `echo '<paste>' | python scripts/check_team_legality.py`.
 
-See `docs/plans/self-play.md` §6.2, `overview.mdc` (MatchupSource protocol).
+See `docs/plans/self-play.md` §6.2, `self-play/overview.md` (MatchupSource protocol).

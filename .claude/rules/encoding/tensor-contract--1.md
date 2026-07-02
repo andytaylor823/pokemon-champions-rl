@@ -1,0 +1,46 @@
+---
+alwaysApply: false
+paths: src/obs_bundle.py
+---
+
+# ObsBundle Tensor Contract
+
+`ObsBundle` is a `TensorDict` alias — the single tensor interface between the encoder and the CVPN. Never build tensors for the net directly; always go through `make_obs_bundle` or `collate_obs_bundles`.
+
+## Schema (unbatched, `batch_size=[]`)
+
+| Key | Shape | Dtype | Description |
+|-----|-------|-------|-------------|
+| `entities` | `[N, F]` | float32 | Continuous features per entity token |
+| `ids.species` | `[N]` | int64 | Species vocab index |
+| `ids.ability` | `[N]` | int64 | Ability vocab index |
+| `ids.item` | `[N]` | int64 | Item vocab index |
+| `ids.moves` | `[N, 4]` | int64 | Move vocab indices (4 slots) |
+| `belief_weight` | `[N]` | float32 | Per-token belief weight (1.0 in Phase 1) |
+| `slot_id` | `[N]` | int64 | Side grouping tag (0 = perspective player, 1 = opponent) |
+| `field` | `[Ff]` | float32 | Weather/terrain/pseudo-weather features |
+| `sides` | `[2, Fs]` | float32 | Per-side features (my side first, opponent second) |
+| `scalars` | `[Fg]` | float32 | Global scalars (turn, phase one-hot, who's acting) |
+| `action_mask` | `[A]` | bool | Legal action mask (from `action_space.legal_mask`) |
+| `padding_mask` | `[N]` | bool | True = real token, False = padding |
+
+`N` = number of entity tokens (12 in Phase 1: 6 my + 6 opponent).
+`F`, `Ff`, `Fs`, `Fg` are sentinel-derived constants from `encoder.py`.
+
+## Batched form (`batch_size=[B]`)
+
+After `collate_obs_bundles(list[ObsBundle])`, all tensors gain a leading `B` dimension. Entity-axis tensors are padded to `max(N)` across the batch.
+
+## Collation rules (`collate_obs_bundles`)
+
+- Pads `entities`, `ids.*`, `belief_weight`, `slot_id` to the longest N in the batch with zeros.
+- Sets `padding_mask[i, n:] = False` for padded positions (CVPN uses this to build `src_key_padding_mask`).
+- Non-entity tensors (`field`, `sides`, `scalars`, `action_mask`) are stacked directly.
+
+## Conventions
+
+- **Index 0 in vocab IDs** = UNK/NONE (embedding tables use `padding_idx=0`).
+- **`padding_mask` polarity**: True = attend, False = ignore. The CVPN inverts this for PyTorch's Transformer (which uses True = ignore).
+- **`action_mask` polarity**: True = legal. CVPN masks illegal positions to `-inf`.
+
+See `encoding/overview--1.md` (pipeline context), `cvpn/overview.md` (consumer), `docs/architecture/state-encoding.md`.

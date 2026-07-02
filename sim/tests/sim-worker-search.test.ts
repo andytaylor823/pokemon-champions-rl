@@ -3,9 +3,13 @@
  * boundary (`dispatch`), not just at the raw State level: clone == parent
  * fidelity, step reproducibility, and the real cloneBattle/step code path.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { dispatch, resetState } from "../src/sim-worker";
 import { freshBattle, advancePastTeamPreview, rollout } from "./helpers/worker-harness";
+
+// Freeze wall-clock time so `|t:|` protocol lines are identical across rollouts.
+vi.useFakeTimers();
+afterAll(() => vi.useRealTimers());
 
 beforeEach(() => resetState());
 

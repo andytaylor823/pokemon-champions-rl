@@ -1,0 +1,17 @@
+# Update-Docs Scope
+
+When running the `/update-docs` skill (doc/rule staleness audit), **only** audit these two sets of files:
+
+1. **Cursor rules** — `.cursor/rules/**/*.md`
+2. **Plans docs** — `docs/plans/**/*.md`
+
+Skip everything else (`docs/architecture/`, `docs/research/`, `docs/transcripts/`, `README.md`, `research/notes.md`, etc.). Those docs are reference material or conversation records; they are maintained separately and do not need periodic sync-marker audits.
+
+## Sync marker protocol
+
+Every audited file carries YAML frontmatter with:
+
+- `last_synced` — short SHA of the commit at which the file was last verified accurate.
+- `watches` — path prefixes this file cares about. Only changes under those paths can make it stale.
+
+If a file is missing either field, add them during the audit.

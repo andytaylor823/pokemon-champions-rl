@@ -129,18 +129,13 @@ def main() -> None:
 
     stage = _STAGES[args.stage]
     rows: list[dict] = []
-    evaluated: set[int] = set()
 
     sim = SimClient()
     try:
-      while True:
         checkpoints = _scan_checkpoints(args.checkpoint_dir)
-        pending = [c for c in checkpoints if _generation_from_path(c) not in evaluated]
-        if not pending:
-            break
-        logger.info("Found %d new checkpoint(s) to evaluate in %s", len(pending), args.checkpoint_dir)
+        logger.info("Found %d checkpoint(s) to evaluate in %s", len(checkpoints), args.checkpoint_dir)
 
-        for ckpt_path in pending:
+        for ckpt_path in checkpoints:
             gen = _generation_from_path(ckpt_path)
             logger.info("Evaluating gen %04d (%s) …", gen, ckpt_path.name)
 
@@ -182,7 +177,6 @@ def main() -> None:
                 row["vs_baseline_aborted"] = h2h_base.aborted
 
             rows.append(row)
-            evaluated.add(gen)
 
             # Print progress row
             print(

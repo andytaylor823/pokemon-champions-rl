@@ -29,28 +29,20 @@ import random
 import sys
 from pathlib import Path
 
-import torch
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import action_space  # noqa: E402
 import curriculum  # noqa: E402
 from checkpoint import load_checkpoint  # noqa: E402
-from encoder import encode  # noqa: E402
-from evaluation import PolicyAgent, RandomAgent, SearchAgent  # noqa: E402
+from evaluation import PolicyAgent, RandomAgent, SearchAgent, play_game  # noqa: E402
 from search import SearchConfig  # noqa: E402
-from sim_client import SimClient, SimError  # noqa: E402
+from sim_client import SimClient  # noqa: E402
 
 _STAGES = {0: curriculum.STAGE_0, 1: curriculum.STAGE_1}
 
 logger = logging.getLogger(__name__)
 
 
-def _rng_seed(rng: random.Random) -> list[int]:
-    return [rng.randint(0, 0xFFFF) for _ in range(4)]
-
-
-def play_game_with_log(
+def _play_and_capture_log(
     agent_p1,
     agent_p2,
     team_a: list[dict],
@@ -60,61 +52,21 @@ def play_game_with_log(
     seed: int,
     max_decisions: int = 300,
 ) -> list[str] | None:
-    """Play one game and return the full protocol log, or None on abort."""
-    game_rng = random.Random(seed)
-    battle_seed = _rng_seed(game_rng)
+    """Play one game via evaluation.play_game and capture the protocol log."""
+    captured_log: list[list[str]] = []
 
-    handle, view = sim.new_battle(team_a, team_b, seed=battle_seed)
-    decision_idx = 0
+    def _capture(sim_ref: SimClient, handle: int) -> None:
+        captured_log.append(sim_ref.get_log(handle))
 
-    try:
-        while not view.terminal and decision_idx < max_decisions:
-            # Empty phase: advance engine
-            if not view.to_move or view.phase == "none":
-                step_seed = _rng_seed(game_rng)
-                res = sim.step(handle, {}, step_seed)
-                sim.release(handle)
-                handle, view = res.child, res.view
-                continue
+    result = play_game(
+        agent_p1, agent_p2, team_a, team_b, sim,
+        seed=seed, max_decisions=max_decisions, on_terminal=_capture,
+    )
 
-            # Forced decision: auto-step
-            forced = action_space.forced_actions(view.legal, view.to_move, view.phase)
-            if forced is not None:
-                choices = {
-                    s: action_space.action_to_choice_contextual(idx, view.legal.get(s))
-                    for s, idx in forced.items()
-                }
-                step_seed = _rng_seed(game_rng)
-                res = sim.step(handle, choices, step_seed)
-                sim.release(handle)
-                handle, view = res.child, res.view
-                continue
-
-            # Genuine decision: call agents
-            choices: dict[str, str] = {}
-            agents = {"p1": agent_p1, "p2": agent_p2}
-            for side in view.to_move:
-                idx = agents[side].act(view, side, sim, handle)
-                choices[side] = action_space.action_to_choice_contextual(idx, view.legal.get(side))
-
-            step_seed = _rng_seed(game_rng)
-            res = sim.step(handle, choices, step_seed)
-            sim.release(handle)
-            handle, view = res.child, res.view
-            decision_idx += 1
-
-        # Retrieve the full accumulated log from the final battle state
-        full_log = sim.get_log(handle)
-        sim.release(handle)
-        return full_log
-
-    except (SimError, Exception) as exc:
-        logger.error("Game aborted: %s", exc)
-        try:
-            sim.release(handle)
-        except Exception:
-            pass
+    if result.outcome == "aborted":
+        logger.error("Game aborted: %s", result.abort_reason)
         return None
+    return captured_log[0] if captured_log else None
 
 
 def _strip_split_sections(log_lines: list[str]) -> list[str]:
@@ -236,7 +188,7 @@ def main() -> None:
 
     sim = SimClient(inherit_stderr=True)
     try:
-        log_lines = play_game_with_log(
+        log_lines = _play_and_capture_log(
             agent_p1, agent_p2,
             team_a, team_b,
             sim,

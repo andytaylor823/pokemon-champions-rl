@@ -102,11 +102,11 @@ def test_value_loss_targets_search_value_not_z():
     batch = [_fake_tuple([5, 6, 7], value=0.7, z=-1.0) for _ in range(4)]
 
     last = None
-    for _ in range(150):
+    for _ in range(300):
         last = trainer.train_step(batch).value_loss
 
-    # This test is a bit flaky; the value here is like 0.0539, so 0.06 is a reasonable threshold.
-    assert last < 0.06  # v_hat converged to ~0.7; had it chased z=-1 the loss would stay large
+    # Wider entity features (91-dim) need more iterations to converge with d_model=32
+    assert last < 0.01  # v_hat converged to ~0.7; had it chased z=-1 the loss would stay large
 
 
 def test_optimizer_is_adamw_with_configured_hyperparams():

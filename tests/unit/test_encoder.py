@@ -294,7 +294,7 @@ class TestVolatileCounters:
 
     def test_shape(self):
         vec = _volatile_counters(_minimal_mon())
-        assert vec.shape == (4,)
+        assert vec.shape == (29,)
 
     def test_all_zero_for_default(self):
         vec = _volatile_counters(_minimal_mon())
@@ -708,148 +708,8 @@ class TestStatusOnehotExhaustive:
 # ---------------------------------------------------------------------------
 
 
-class TestVolatileCountersExhaustive:
-    """Test every volatile state the encoder reads from, plus many it ignores."""
 
-    def test_substitute_half_hp(self):
-        mon = _minimal_mon(volatileDetails={"substitute": {"hp": 100}})
-        vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(100 / 200)
-
-    def test_substitute_full_hp(self):
-        mon = _minimal_mon(volatileDetails={"substitute": {"hp": 200}})
-        vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(1.0)
-
-    def test_substitute_zero_hp(self):
-        mon = _minimal_mon(volatileDetails={"substitute": {"hp": 0}})
-        vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(0.0)
-
-    def test_substitute_absent(self):
-        mon = _minimal_mon(volatileDetails={})
-        vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(0.0)
-
-    def test_stall_counter_1(self):
-        mon = _minimal_mon(volatileDetails={"stall": {"counter": 1}})
-        vec = _volatile_counters(mon)
-        assert vec[1].item() == pytest.approx(1 / 6)
-
-    def test_stall_counter_max(self):
-        mon = _minimal_mon(volatileDetails={"stall": {"counter": 6}})
-        vec = _volatile_counters(mon)
-        assert vec[1].item() == pytest.approx(1.0)
-
-    def test_stall_counter_zero(self):
-        mon = _minimal_mon(volatileDetails={"stall": {"counter": 0}})
-        vec = _volatile_counters(mon)
-        assert vec[1].item() == pytest.approx(0.0)
-
-    def test_stall_counter_absent(self):
-        mon = _minimal_mon(volatileDetails={})
-        vec = _volatile_counters(mon)
-        assert vec[1].item() == pytest.approx(0.0)
-
-    @pytest.mark.parametrize("turns,expected", [
-        (0, 0.0),
-        (1, 1 / 20),
-        (5, 5 / 20),
-        (10, 10 / 20),
-        (20, 1.0),
-    ])
-    def test_active_turns(self, turns, expected):
-        mon = _minimal_mon(activeTurns=turns)
-        vec = _volatile_counters(mon)
-        assert vec[2].item() == pytest.approx(expected)
-
-    def test_substitute_and_stall_simultaneously(self):
-        mon = _minimal_mon(
-            volatileDetails={"substitute": {"hp": 50}, "stall": {"counter": 3}},
-            activeTurns=4,
-        )
-        vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(50 / 200)
-        assert vec[1].item() == pytest.approx(3 / 6)
-        assert vec[2].item() == pytest.approx(4 / 20)
-        assert vec[3].item() == pytest.approx(0.0)
-
-    def test_yawn_active(self):
-        mon = _minimal_mon(
-            volatiles=["yawn"],
-            volatileDetails={"yawn": {"time": 1}},
-        )
-        vec = _volatile_counters(mon)
-        assert vec[3].item() == pytest.approx(1.0)
-
-    def test_yawn_absent(self):
-        mon = _minimal_mon(volatiles=[], volatileDetails={})
-        vec = _volatile_counters(mon)
-        assert vec[3].item() == pytest.approx(0.0)
-
-    def test_yawn_with_other_volatiles(self):
-        mon = _minimal_mon(
-            volatiles=["substitute", "stall", "yawn"],
-            volatileDetails={"substitute": {"hp": 80}, "stall": {"counter": 2}, "yawn": {"time": 1}},
-            activeTurns=3,
-        )
-        vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(80 / 200)
-        assert vec[1].item() == pytest.approx(2 / 6)
-        assert vec[2].item() == pytest.approx(3 / 20)
-        assert vec[3].item() == pytest.approx(1.0)
-
-
-class TestVolatilesDoNotCrashEncoder:
-    """Volatiles the engine emits but the encoder ignores must not crash encoding."""
-
-    @pytest.mark.parametrize("volatile_name,detail", [
-        ("encore", {"duration": 3}),
-        ("perishsong", {"duration": 2}),
-        ("protect", {"duration": 1}),
-        ("taunt", {"duration": 3}),
-        ("disable", {"duration": 4}),
-        ("confusion", {"time": 3}),
-        ("leechseed", {}),
-        ("yawn", {"time": 1}),
-        ("flinch", {}),
-        ("torment", {}),
-        ("attract", {}),
-        ("imprison", {}),
-        ("healblock", {"duration": 5}),
-        ("embargo", {"duration": 5}),
-    ])
-    def test_single_volatile_does_not_crash(self, volatile_name, detail):
-        mon = _minimal_mon(
-            volatiles=[volatile_name],
-            volatileDetails={volatile_name: detail},
-        )
-        feats = _encode_pokemon_features(mon)
-        assert feats.shape == (ENTITY_FEATURE_DIM,)
-
-    def test_many_volatiles_simultaneously(self):
-        details = {
-            "substitute": {"hp": 80},
-            "stall": {"counter": 2},
-            "encore": {"duration": 3},
-            "taunt": {"duration": 2},
-            "perishsong": {"duration": 1},
-            "confusion": {"time": 2},
-            "yawn": {"time": 1},
-        }
-        mon = _minimal_mon(
-            volatiles=list(details.keys()),
-            volatileDetails=details,
-            activeTurns=5,
-        )
-        feats = _encode_pokemon_features(mon)
-        assert feats.shape == (ENTITY_FEATURE_DIM,)
-        # Verify the features the encoder actually extracts are correct
-        vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(80 / 200)
-        assert vec[1].item() == pytest.approx(2 / 6)
-        assert vec[2].item() == pytest.approx(5 / 20)
-        assert vec[3].item() == pytest.approx(1.0)
+# Volatile exhaustive tests moved to test_encoder_volatiles.py
 
 
 # ---------------------------------------------------------------------------
@@ -1433,8 +1293,8 @@ class TestEncodePhaseVariations:
 
     def test_entity_feature_dim_value(self):
         """Sentinel-derived ENTITY_FEATURE_DIM matches expected sum of sub-encoder widths."""
-        # 1(hp) + 6(stats) + 7(boosts) + 7(status) + 25(nature) + 8(moves) + 4(volatile) + 8(flags) = 66
-        assert ENTITY_FEATURE_DIM == 66
+        # 1(hp) + 6(stats) + 7(boosts) + 7(status) + 25(nature) + 8(moves) + 29(volatile) + 8(flags) = 91
+        assert ENTITY_FEATURE_DIM == 91
 
     def test_field_feature_dim_value(self):
         """FIELD_FEATURE_DIM = 5(weather) + 5(terrain) + 2(trick_room) + 1(gravity) = 13."""

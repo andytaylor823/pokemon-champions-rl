@@ -47,6 +47,21 @@ _TERRAIN_MAP = {"electricterrain": 0, "grassyterrain": 1, "mistyterrain": 2, "ps
 
 _PHASE_MAP = {"teamPreview": 0, "move": 1, "forceSwitch": 2, "terminal": 3}
 
+# Binary volatile flags — order defines tensor layout. Adding a new volatile is
+# a data change: append the engine ID string here (and add a test).
+BINARY_VOLATILES: tuple[str, ...] = (
+    # Tier 1: action-constraining
+    "trapped", "partiallytrapped", "lockedmove", "mustrecharge", "twoturnmove",
+    "encore", "taunt", "disable", "torment",
+    # Tier 2: mechanic-altering / multi-turn
+    "focusenergy", "charge", "throatchop", "confusion", "leechseed",
+    "magnetrise", "healblock", "smackdown", "imprison", "saltcure",
+    "unburden", "protosynthesis", "quarkdrive", "noretreat",
+)
+# Offset where binary volatile flags begin in the _volatile_counters tensor.
+# Preceding slots: sub_hp, stall, active_turns, yawn, flash_fire, perish_song.
+BINARY_VOLATILE_OFFSET = 6
+
 
 def encode(
     view: StateView,
@@ -132,6 +147,7 @@ def encode(
     )
 
 
+# [ENCODING-CHECKPOINT-4] Sub-encoders — add new features in the appropriate section below
 # --- Entity sub-encoders (each returns a fixed-width sub-tensor) -----------
 
 
@@ -181,7 +197,7 @@ def _move_pp_flags(mon: PokemonSnapshot) -> torch.Tensor:
 
 
 def _volatile_counters(mon: PokemonSnapshot) -> torch.Tensor:
-    """Substitute HP, stall counter, active turns, yawn (drowsy). [4]"""
+    """Substitute HP, stall counter, active turns, yawn, flash fire, perish song, + binary volatile flags. [29]"""
     sub_data = mon.volatileDetails.get("substitute")
     sub_hp = (sub_data.hp or 0) / MAX_STAT if sub_data and sub_data.hp is not None else 0.0
     stall_data = mon.volatileDetails.get("stall")
@@ -189,7 +205,17 @@ def _volatile_counters(mon: PokemonSnapshot) -> torch.Tensor:
     active_turns = mon.activeTurns / MAX_TURNS
     # Yawn sets a 1-turn drowsy countdown; the decision-critical signal is simply "is drowsy"
     yawn = 1.0 if "yawn" in mon.volatiles else 0.0
-    return torch.tensor([sub_hp, stall, active_turns, yawn])
+    # Flash Fire activated: 1.5x boost to Fire moves — binary on/off
+    flash_fire = 1.0 if "flashfire" in mon.volatiles else 0.0
+    # Perish Song: counter normalized to [0,1] — 3=just applied, 1=faints next turn
+    perish_data = mon.volatileDetails.get("perishsong")
+    perish_song = (perish_data.duration or 0) / 3.0 if perish_data and perish_data.duration is not None else 0.0
+
+    # Binary volatiles: presence/absence flags. Adding a new volatile is a data
+    # change (append to this tuple) — no variable, no return-tensor edit needed.
+    binary = [1.0 if name in mon.volatiles else 0.0 for name in BINARY_VOLATILES]
+
+    return torch.tensor([sub_hp, stall, active_turns, yawn, flash_fire, perish_song] + binary)
 
 
 def _slot_flags(mon: PokemonSnapshot, is_opponent: bool) -> torch.Tensor:
@@ -240,6 +266,7 @@ def _encode_move_ids(moves: list[MoveSnapshot]) -> torch.Tensor:
     return ids
 
 
+# [ENCODING-CHECKPOINT-4] Field sub-encoders
 # --- Field sub-encoders -----------------------------------------------------
 
 
@@ -290,6 +317,7 @@ def _encode_field(field_data: FieldSnapshot) -> torch.Tensor:
     )
 
 
+# [ENCODING-CHECKPOINT-4] Side sub-encoders
 # --- Side sub-encoders ------------------------------------------------------
 
 
@@ -335,6 +363,7 @@ def _encode_side(side_data: SideSnapshot) -> torch.Tensor:
     )
 
 
+# [ENCODING-CHECKPOINT-4] Scalar sub-encoders
 # --- Scalar sub-encoders ----------------------------------------------------
 
 

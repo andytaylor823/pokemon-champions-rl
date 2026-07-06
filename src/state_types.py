@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+# [ENCODING-CHECKPOINT-3] Pydantic wire models — must mirror sim/src/types.ts 1:1
+
 
 class MoveSnapshot(BaseModel):
     """Per-slot move state (mirrors TS ``MoveSnapshot``)."""

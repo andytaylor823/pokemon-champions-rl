@@ -118,6 +118,10 @@ class SimClient:
     def close_search(self, session: int) -> int:
         return self._rpc("close_search", session=session)["freed"]
 
+    def get_log(self, handle: int) -> list[str]:
+        """Return the full accumulated protocol log for a battle handle."""
+        return self._rpc("get_log", handle=handle)["log"]
+
     def stats(self) -> dict:
         return self._rpc("stats")
 

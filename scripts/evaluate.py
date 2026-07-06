@@ -128,13 +128,13 @@ def main() -> None:
     )
 
     stage = _STAGES[args.stage]
-    checkpoints = _scan_checkpoints(args.checkpoint_dir)
-    logger.info("Found %d checkpoint(s) in %s", len(checkpoints), args.checkpoint_dir)
-
     rows: list[dict] = []
 
     sim = SimClient()
     try:
+        checkpoints = _scan_checkpoints(args.checkpoint_dir)
+        logger.info("Found %d checkpoint(s) to evaluate in %s", len(checkpoints), args.checkpoint_dir)
+
         for ckpt_path in checkpoints:
             gen = _generation_from_path(ckpt_path)
             logger.info("Evaluating gen %04d (%s) …", gen, ckpt_path.name)

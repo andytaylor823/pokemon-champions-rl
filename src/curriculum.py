@@ -55,24 +55,24 @@ _GRASS_BASE = [
 STAGE_0_FIRE = _with_moves(
     _FIRE_BASE,
     [
-        ["Heat Wave", "Protect"],
-        ["Heat Wave", "Protect"],
-        ["Heat Wave", "Protect"],
-        ["Heat Wave", "Protect"],
-        ["Flare Blitz", "Protect"],
-        ["Flare Blitz", "Protect"],
+        ["Heat Wave", "Roar"],
+        ["Heat Wave", "Rest"],
+        ["Heat Wave", "Haze"],
+        ["Heat Wave", "Stealth Rock"],
+        ["Flare Blitz", "Fake Out"],
+        ["Flare Blitz", "Tailwind"],
     ],
 )
 
 STAGE_0_GRASS = _with_moves(
     _GRASS_BASE,
     [
-        ["Energy Ball", "Protect"],
-        ["Energy Ball", "Protect"],
-        ["Energy Ball", "Protect"],
-        ["Energy Ball", "Protect"],
-        ["Energy Ball", "Protect"],
-        ["Energy Ball", "Protect"],
+        ["Sleep Powder", "Sludge Bomb"],
+        ["Energy Ball", "Ancient Power"],
+        ["Energy Ball", "Earth Power"],
+        ["Energy Ball", "Close Combat"],
+        ["Energy Ball", "High Horsepower"],
+        ["Energy Ball", "High Horsepower"],
     ],
 )
 

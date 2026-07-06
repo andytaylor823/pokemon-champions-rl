@@ -972,6 +972,28 @@ class TestPlayGameHandleLifecycle:
         sim.release.assert_any_call(11)
         sim.release.assert_any_call(22)
 
+    def test_on_terminal_crash_still_releases_handle(self):
+        """If on_terminal raises, the handle must still be released (no leak)."""
+        terminal_view = _make_view(terminal=True, utility={"p1": 1.0}, turn=5)
+        initial_view = _make_view(terminal=False, to_move=[], turn=0)
+
+        sim = MagicMock()
+        sim.new_battle.return_value = (11, initial_view)
+        step_result = MagicMock()
+        step_result.child = 22
+        step_result.view = terminal_view
+        sim.step.return_value = step_result
+
+        def crashing_callback(sim_arg, handle_arg):
+            raise RuntimeError("callback exploded")
+
+        # The callback exception should propagate, but release must still be called
+        with pytest.raises(RuntimeError, match="callback exploded"):
+            play_game(MagicMock(), MagicMock(), [], [], sim, seed=0, on_terminal=crashing_callback)
+
+        # Handle 22 (the terminal handle) must be released despite the crash
+        sim.release.assert_any_call(22)
+
 
 # ---------------------------------------------------------------------------
 # CurriculumReport: draw_rate property

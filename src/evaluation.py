@@ -273,11 +273,14 @@ def play_game(
             handle = None
             return GameResult("aborted", final_turns, "max_decisions")
 
-        # Terminal: let callers extract data (e.g. protocol log) before release
-        if on_terminal is not None:
-            on_terminal(sim, handle)
-        sim.release(handle)
-        handle = None
+        # Terminal: let callers extract data (e.g. protocol log) before release.
+        # Wrap in try/finally so handle is always released even if the callback raises.
+        try:
+            if on_terminal is not None:
+                on_terminal(sim, handle)
+        finally:
+            sim.release(handle)
+            handle = None
         utility = view.utility
         if utility is None:
             return GameResult("draw", final_turns)

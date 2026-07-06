@@ -132,6 +132,7 @@ def encode(
     )
 
 
+# [ENCODING-CHECKPOINT-4] Sub-encoders — add new features in the appropriate section below
 # --- Entity sub-encoders (each returns a fixed-width sub-tensor) -----------
 
 
@@ -181,7 +182,7 @@ def _move_pp_flags(mon: PokemonSnapshot) -> torch.Tensor:
 
 
 def _volatile_counters(mon: PokemonSnapshot) -> torch.Tensor:
-    """Substitute HP, stall counter, active turns, yawn (drowsy). [4]"""
+    """Substitute HP, stall counter, active turns, yawn, flash fire, + 24 binary volatile flags. [29]"""
     sub_data = mon.volatileDetails.get("substitute")
     sub_hp = (sub_data.hp or 0) / MAX_STAT if sub_data and sub_data.hp is not None else 0.0
     stall_data = mon.volatileDetails.get("stall")
@@ -189,7 +190,47 @@ def _volatile_counters(mon: PokemonSnapshot) -> torch.Tensor:
     active_turns = mon.activeTurns / MAX_TURNS
     # Yawn sets a 1-turn drowsy countdown; the decision-critical signal is simply "is drowsy"
     yawn = 1.0 if "yawn" in mon.volatiles else 0.0
-    return torch.tensor([sub_hp, stall, active_turns, yawn])
+    # Flash Fire activated: 1.5x boost to Fire moves — binary on/off
+    flash_fire = 1.0 if "flashfire" in mon.volatiles else 0.0
+
+    # --- Tier 1: action-constraining volatiles ---
+    trapped = 1.0 if "trapped" in mon.volatiles else 0.0
+    partially_trapped = 1.0 if "partiallytrapped" in mon.volatiles else 0.0
+    locked_move = 1.0 if "lockedmove" in mon.volatiles else 0.0
+    must_recharge = 1.0 if "mustrecharge" in mon.volatiles else 0.0
+    two_turn_move = 1.0 if "twoturnmove" in mon.volatiles else 0.0
+    encore = 1.0 if "encore" in mon.volatiles else 0.0
+    taunt = 1.0 if "taunt" in mon.volatiles else 0.0
+    disable = 1.0 if "disable" in mon.volatiles else 0.0
+    torment = 1.0 if "torment" in mon.volatiles else 0.0
+
+    # --- Tier 2: mechanic-altering / multi-turn volatiles ---
+    focus_energy = 1.0 if "focusenergy" in mon.volatiles else 0.0
+    charge = 1.0 if "charge" in mon.volatiles else 0.0
+    throatchop = 1.0 if "throatchop" in mon.volatiles else 0.0
+    confusion = 1.0 if "confusion" in mon.volatiles else 0.0
+    leech_seed = 1.0 if "leechseed" in mon.volatiles else 0.0
+    # Perish Song: counter normalized to [0,1] — 3=just applied, 1=faints next turn
+    perish_data = mon.volatileDetails.get("perishsong")
+    perish_song = (perish_data.duration or 0) / 3.0 if perish_data and perish_data.duration is not None else 0.0
+    magnet_rise = 1.0 if "magnetrise" in mon.volatiles else 0.0
+    heal_block = 1.0 if "healblock" in mon.volatiles else 0.0
+    smackdown = 1.0 if "smackdown" in mon.volatiles else 0.0
+    imprison = 1.0 if "imprison" in mon.volatiles else 0.0
+    salt_cure = 1.0 if "saltcure" in mon.volatiles else 0.0
+    unburden = 1.0 if "unburden" in mon.volatiles else 0.0
+    protosynthesis = 1.0 if "protosynthesis" in mon.volatiles else 0.0
+    quark_drive = 1.0 if "quarkdrive" in mon.volatiles else 0.0
+    no_retreat = 1.0 if "noretreat" in mon.volatiles else 0.0
+
+    return torch.tensor([
+        sub_hp, stall, active_turns, yawn, flash_fire,
+        trapped, partially_trapped, locked_move, must_recharge, two_turn_move,
+        encore, taunt, disable, torment,
+        focus_energy, charge, throatchop, confusion, leech_seed, perish_song,
+        magnet_rise, heal_block, smackdown, imprison, salt_cure,
+        unburden, protosynthesis, quark_drive, no_retreat,
+    ])
 
 
 def _slot_flags(mon: PokemonSnapshot, is_opponent: bool) -> torch.Tensor:
@@ -240,6 +281,7 @@ def _encode_move_ids(moves: list[MoveSnapshot]) -> torch.Tensor:
     return ids
 
 
+# [ENCODING-CHECKPOINT-4] Field sub-encoders
 # --- Field sub-encoders -----------------------------------------------------
 
 
@@ -290,6 +332,7 @@ def _encode_field(field_data: FieldSnapshot) -> torch.Tensor:
     )
 
 
+# [ENCODING-CHECKPOINT-4] Side sub-encoders
 # --- Side sub-encoders ------------------------------------------------------
 
 
@@ -335,6 +378,7 @@ def _encode_side(side_data: SideSnapshot) -> torch.Tensor:
     )
 
 
+# [ENCODING-CHECKPOINT-4] Scalar sub-encoders
 # --- Scalar sub-encoders ----------------------------------------------------
 
 

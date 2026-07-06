@@ -137,6 +137,7 @@ function utilityOf(battle: any): Record<Side, number> | null {
   return { p1: p1won ? 1 : -1, p2: p1won ? -1 : 1 };
 }
 
+// [ENCODING-CHECKPOINT-1] snapshotPokemon — raw engine extraction for entity tokens
 /** A clean, JSON-safe omniscient snapshot built from live objects (v1). */
 function snapshotPokemon(p: any): PokemonSnapshot {
   // Build volatile details: capture duration, time, hp, and counter for each volatile
@@ -182,6 +183,7 @@ function snapshotPokemon(p: any): PokemonSnapshot {
   };
 }
 
+// [ENCODING-CHECKPOINT-1] snapshotSide — raw engine extraction for side conditions
 function snapshotSide(side: any): SideSnapshot {
   const conds: Record<string, SideConditionSnapshot> = {};
   for (const id of Object.keys(side.sideConditions ?? {})) {
@@ -198,6 +200,7 @@ function snapshotSide(side: any): SideSnapshot {
   };
 }
 
+// [ENCODING-CHECKPOINT-1] snapshotBattle — raw engine extraction for field conditions
 function snapshotBattle(battle: any): BattleSnapshot {
   const field = battle.field;
   // Build pseudoWeather with durations (mirrors sideConditions pattern)
@@ -281,6 +284,8 @@ function dispatch(msg: any): any {
       }
       return { closed: msg.session, freed };
     }
+    case "get_log":
+      return { log: getBattle(msg.handle).log };
     case "stats":
       return { handles: battles.size, sessions: sessions.size };
     case "close":

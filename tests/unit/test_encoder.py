@@ -294,7 +294,7 @@ class TestVolatileCounters:
 
     def test_shape(self):
         vec = _volatile_counters(_minimal_mon())
-        assert vec.shape == (4,)
+        assert vec.shape == (29,)
 
     def test_all_zero_for_default(self):
         vec = _volatile_counters(_minimal_mon())
@@ -799,25 +799,232 @@ class TestVolatileCountersExhaustive:
         assert vec[2].item() == pytest.approx(3 / 20)
         assert vec[3].item() == pytest.approx(1.0)
 
+    def test_flash_fire_active(self):
+        mon = _minimal_mon(
+            volatiles=["flashfire"],
+            volatileDetails={"flashfire": {}},
+        )
+        vec = _volatile_counters(mon)
+        assert vec[4].item() == pytest.approx(1.0)
+
+    def test_flash_fire_absent(self):
+        mon = _minimal_mon(volatiles=[], volatileDetails={})
+        vec = _volatile_counters(mon)
+        assert vec[4].item() == pytest.approx(0.0)
+
+    def test_flash_fire_with_other_volatiles(self):
+        mon = _minimal_mon(
+            volatiles=["substitute", "flashfire", "yawn"],
+            volatileDetails={"substitute": {"hp": 60}, "flashfire": {}, "yawn": {"time": 1}},
+            activeTurns=2,
+        )
+        vec = _volatile_counters(mon)
+        assert vec[0].item() == pytest.approx(60 / 200)
+        assert vec[1].item() == pytest.approx(0.0)
+        assert vec[2].item() == pytest.approx(2 / 20)
+        assert vec[3].item() == pytest.approx(1.0)
+        assert vec[4].item() == pytest.approx(1.0)
+
+    # --- Tier 1 binary volatiles (indices 5-13) ---
+
+    @pytest.mark.parametrize("volatile_name,idx", [
+        ("trapped", 5),
+        ("partiallytrapped", 6),
+        ("lockedmove", 7),
+        ("mustrecharge", 8),
+        ("twoturnmove", 9),
+        ("encore", 10),
+        ("taunt", 11),
+        ("disable", 12),
+        ("torment", 13),
+    ])
+    def test_tier1_volatile_active(self, volatile_name, idx):
+        mon = _minimal_mon(
+            volatiles=[volatile_name],
+            volatileDetails={volatile_name: {}},
+        )
+        vec = _volatile_counters(mon)
+        assert vec[idx].item() == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("volatile_name,idx", [
+        ("trapped", 5),
+        ("partiallytrapped", 6),
+        ("lockedmove", 7),
+        ("mustrecharge", 8),
+        ("twoturnmove", 9),
+        ("encore", 10),
+        ("taunt", 11),
+        ("disable", 12),
+        ("torment", 13),
+    ])
+    def test_tier1_volatile_absent(self, volatile_name, idx):
+        mon = _minimal_mon(volatiles=[], volatileDetails={})
+        vec = _volatile_counters(mon)
+        assert vec[idx].item() == pytest.approx(0.0)
+
+    # --- Tier 2 binary volatiles (indices 14-18, 20-28) ---
+
+    @pytest.mark.parametrize("volatile_name,idx", [
+        ("focusenergy", 14),
+        ("charge", 15),
+        ("throatchop", 16),
+        ("confusion", 17),
+        ("leechseed", 18),
+        ("magnetrise", 20),
+        ("healblock", 21),
+        ("smackdown", 22),
+        ("imprison", 23),
+        ("saltcure", 24),
+        ("unburden", 25),
+        ("protosynthesis", 26),
+        ("quarkdrive", 27),
+        ("noretreat", 28),
+    ])
+    def test_tier2_volatile_active(self, volatile_name, idx):
+        mon = _minimal_mon(
+            volatiles=[volatile_name],
+            volatileDetails={volatile_name: {}},
+        )
+        vec = _volatile_counters(mon)
+        assert vec[idx].item() == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("volatile_name,idx", [
+        ("focusenergy", 14),
+        ("charge", 15),
+        ("throatchop", 16),
+        ("confusion", 17),
+        ("leechseed", 18),
+        ("magnetrise", 20),
+        ("healblock", 21),
+        ("smackdown", 22),
+        ("imprison", 23),
+        ("saltcure", 24),
+        ("unburden", 25),
+        ("protosynthesis", 26),
+        ("quarkdrive", 27),
+        ("noretreat", 28),
+    ])
+    def test_tier2_volatile_absent(self, volatile_name, idx):
+        mon = _minimal_mon(volatiles=[], volatileDetails={})
+        vec = _volatile_counters(mon)
+        assert vec[idx].item() == pytest.approx(0.0)
+
+    # --- Perish Song counter (index 19) ---
+
+    @pytest.mark.parametrize("duration,expected", [
+        (3, 1.0),
+        (2, 2 / 3),
+        (1, 1 / 3),
+        (0, 0.0),
+    ])
+    def test_perishsong_counter(self, duration, expected):
+        mon = _minimal_mon(
+            volatiles=["perishsong"],
+            volatileDetails={"perishsong": {"duration": duration}},
+        )
+        vec = _volatile_counters(mon)
+        assert vec[19].item() == pytest.approx(expected)
+
+    def test_perishsong_absent(self):
+        mon = _minimal_mon(volatiles=[], volatileDetails={})
+        vec = _volatile_counters(mon)
+        assert vec[19].item() == pytest.approx(0.0)
+
+    # --- Combined multi-volatile test ---
+
+    def test_all_new_volatiles_simultaneously(self):
+        all_vols = [
+            "trapped", "partiallytrapped", "lockedmove", "mustrecharge", "twoturnmove",
+            "encore", "taunt", "disable", "torment",
+            "focusenergy", "charge", "throatchop", "confusion", "leechseed",
+            "perishsong", "magnetrise", "healblock", "smackdown", "imprison",
+            "saltcure", "unburden", "protosynthesis", "quarkdrive", "noretreat",
+        ]
+        details = {v: {} for v in all_vols}
+        details["perishsong"] = {"duration": 2}
+        mon = _minimal_mon(volatiles=all_vols, volatileDetails=details)
+        vec = _volatile_counters(mon)
+        assert vec.shape == (29,)
+        # All binary flags should be 1.0 (indices 5-18, 20-28)
+        for i in range(5, 19):
+            assert vec[i].item() == pytest.approx(1.0), f"index {i} should be 1.0"
+        for i in range(20, 29):
+            assert vec[i].item() == pytest.approx(1.0), f"index {i} should be 1.0"
+        # Perish song counter at index 19
+        assert vec[19].item() == pytest.approx(2 / 3)
+
 
 class TestVolatilesDoNotCrashEncoder:
     """Volatiles the engine emits but the encoder ignores must not crash encoding."""
 
     @pytest.mark.parametrize("volatile_name,detail", [
-        ("encore", {"duration": 3}),
-        ("perishsong", {"duration": 2}),
+        # Tier 3: single-turn / mid-resolution (intentionally not encoded; see volatile-encoding-audit.md §1)
         ("protect", {"duration": 1}),
-        ("taunt", {"duration": 3}),
-        ("disable", {"duration": 4}),
-        ("confusion", {"time": 3}),
-        ("leechseed", {}),
-        ("yawn", {"time": 1}),
         ("flinch", {}),
-        ("torment", {}),
+        ("helpinghand", {}),
+        ("followme", {}),
+        ("ragepowder", {}),
+        ("spotlight", {}),
+        ("banefulbunker", {}),
+        ("kingsshield", {}),
+        ("silktrap", {}),
+        ("obstruct", {}),
+        ("burningbulwark", {}),
+        ("spikyshield", {}),
+        ("endure", {}),
+        ("focuspunch", {}),
+        ("shelltrap", {}),
+        ("beakblast", {}),
+        ("roost", {}),
+        ("powder", {}),
+        ("electrify", {}),
+        ("dragoncheer", {}),
+        ("laserfocus", {}),
+        # Omitted Tier 2 (not common enough in Champions meta)
         ("attract", {}),
-        ("imprison", {}),
-        ("healblock", {"duration": 5}),
+        ("curse", {}),
+        ("ingrain", {}),
+        ("aquaring", {}),
+        ("telekinesis", {"duration": 3}),
         ("embargo", {"duration": 5}),
+        ("syrupbomb", {"duration": 3}),
+        ("tarshot", {}),
+        ("gastroacid", {}),
+        ("choicelock", {}),
+        ("commanding", {}),
+        ("commanded", {}),
+        # Not worth encoding (niche / not in Champions dex / internal markers)
+        ("allyswitch", {}),
+        ("bide", {}),
+        ("counter", {}),
+        ("mirrorcoat", {}),
+        ("mefirst", {}),
+        ("pursuit", {}),
+        ("fling", {}),
+        ("snatch", {}),
+        ("magiccoat", {}),
+        ("furycutter", {"hit": 2}),
+        ("iceball", {"hit": 1}),
+        ("rollout", {"hit": 1}),
+        ("chillyreception", {}),
+        ("sparklingaria", {}),
+        ("defensecurl", {}),
+        ("minimize", {}),
+        ("foresight", {}),
+        ("miracleeye", {}),
+        ("stockpile", {"layers": 2}),
+        ("grudge", {}),
+        ("destinybond", {}),
+        ("octolock", {}),
+        ("rage", {}),
+        ("uproar", {"duration": 3}),
+        ("glaiverush", {}),
+        ("lockon", {}),
+        ("truant", {}),
+        ("zenmode", {}),
+        ("powershift", {}),
+        ("powertrick", {}),
+        ("nightmare", {}),
     ])
     def test_single_volatile_does_not_crash(self, volatile_name, detail):
         mon = _minimal_mon(
@@ -844,12 +1051,15 @@ class TestVolatilesDoNotCrashEncoder:
         )
         feats = _encode_pokemon_features(mon)
         assert feats.shape == (ENTITY_FEATURE_DIM,)
-        # Verify the features the encoder actually extracts are correct
         vec = _volatile_counters(mon)
-        assert vec[0].item() == pytest.approx(80 / 200)
-        assert vec[1].item() == pytest.approx(2 / 6)
-        assert vec[2].item() == pytest.approx(5 / 20)
-        assert vec[3].item() == pytest.approx(1.0)
+        assert vec[0].item() == pytest.approx(80 / 200)   # substitute HP
+        assert vec[1].item() == pytest.approx(2 / 6)      # stall counter
+        assert vec[2].item() == pytest.approx(5 / 20)     # active turns
+        assert vec[3].item() == pytest.approx(1.0)         # yawn
+        assert vec[10].item() == pytest.approx(1.0)        # encore
+        assert vec[11].item() == pytest.approx(1.0)        # taunt
+        assert vec[17].item() == pytest.approx(1.0)        # confusion
+        assert vec[19].item() == pytest.approx(1 / 3)      # perishsong duration=1
 
 
 # ---------------------------------------------------------------------------
@@ -1433,8 +1643,8 @@ class TestEncodePhaseVariations:
 
     def test_entity_feature_dim_value(self):
         """Sentinel-derived ENTITY_FEATURE_DIM matches expected sum of sub-encoder widths."""
-        # 1(hp) + 6(stats) + 7(boosts) + 7(status) + 25(nature) + 8(moves) + 4(volatile) + 8(flags) = 66
-        assert ENTITY_FEATURE_DIM == 66
+        # 1(hp) + 6(stats) + 7(boosts) + 7(status) + 25(nature) + 8(moves) + 29(volatile) + 8(flags) = 91
+        assert ENTITY_FEATURE_DIM == 91
 
     def test_field_feature_dim_value(self):
         """FIELD_FEATURE_DIM = 5(weather) + 5(terrain) + 2(trick_room) + 1(gravity) = 13."""
